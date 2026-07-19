@@ -7,3 +7,4 @@ An index of the files and folders in this docs folder
 - prd.md - listed requirements of the MVP
 - project-overview.md - a high-level overview of the project
 - solution-design.md - design choices, technical architecture
+- style-guide.md - code and doc organization conventions

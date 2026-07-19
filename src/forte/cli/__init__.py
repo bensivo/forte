@@ -1,12 +1,10 @@
-"""Driver layer: CLI entry points."""
+"""Driver layer: CLI entry points. No business logic — call into services only."""
 
 from pathlib import Path
 
 import click
 
-from forte.db.schema import initialize_database
-from forte.domain.vault import VaultLayout
-from forte.services.config import write_default_config
+from forte.services.init import VaultAlreadyExistsError, init as init_vault
 
 
 @click.group(invoke_without_command=True)
@@ -20,16 +18,8 @@ def main(ctx: click.Context) -> None:
 @main.command()
 def init() -> None:
     """Initialize a new Forte vault in the current directory."""
-    root = Path.cwd()
-    layout = VaultLayout(root)
-
-    if layout.forte_dir.exists():
-        raise click.ClickException(f"Forte vault already exists at {layout.forte_dir}")
-
-    for directory in layout.all_dirs():
-        directory.mkdir(parents=True)
-
-    write_default_config(layout.config_path)
-    initialize_database(layout.db_path)
-
-    click.echo(f"Initialized Forte vault in {root.resolve()}")
+    try:
+        root = init_vault(Path.cwd())
+    except VaultAlreadyExistsError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"Initialized Forte vault in {root}")

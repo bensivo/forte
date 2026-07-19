@@ -31,6 +31,18 @@ And the process exits with a non-zero status code
 And no files under the existing `.forte/` folder are modified
 ```
 
+### Scenario: Init when a conflicting top-level folder already exists
+
+```gherkin
+Given the current working directory contains a `docs/` folder (or an `entities/` folder)
+And no `.forte/` folder exists
+When the user runs `forte init`
+Then the process prints an error message naming the conflicting folder and asking the user to run in an empty directory
+And the process exits with a non-zero status code
+And no files or directories are created
+And the pre-existing conflicting folder and its contents are left untouched
+```
+
 ### Scenario: Init in a non-empty directory without a vault
 
 ```gherkin

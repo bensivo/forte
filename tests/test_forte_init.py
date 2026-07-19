@@ -78,3 +78,36 @@ def test_init_succeeds_in_non_empty_dir_without_vault() -> None:
         assert (root / "entities").is_dir()
         # Pre-existing files untouched.
         assert pre_existing.read_text() == "hello\n"
+
+
+def test_init_fails_when_docs_dir_already_present() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem() as tmp:
+        root = Path(tmp)
+        (root / "docs").mkdir()
+        (root / "docs" / "existing.md").write_text("keep me\n")
+
+        result = runner.invoke(main, ["init"])
+        assert result.exit_code != 0
+        assert "docs/" in result.output
+        assert "empty directory" in result.output
+
+        # Nothing created, nothing touched.
+        assert not (root / ".forte").exists()
+        assert not (root / "entities").exists()
+        assert (root / "docs" / "existing.md").read_text() == "keep me\n"
+
+
+def test_init_fails_when_entities_dir_already_present() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem() as tmp:
+        root = Path(tmp)
+        (root / "entities").mkdir()
+
+        result = runner.invoke(main, ["init"])
+        assert result.exit_code != 0
+        assert "entities/" in result.output
+        assert "empty directory" in result.output
+
+        assert not (root / ".forte").exists()
+        assert not (root / "docs").exists()
