@@ -57,7 +57,6 @@ MVP is a local Python CLI targeting individual knowledge workers. See [docs/proj
 - As a user, I should be able to run `forte doc ingest <path>` on a text-based document (md, txt, or text-extractable docx/pdf).
 - When the user runs `forte doc ingest <path>`, forte shall:
   - copy the source document into the vault's internal `docs/raw/` folder and register it in the SQLite index, so that the vault does not depend on the user retaining their original copy.
-  - 
 - Given an ingest run, when Forte proposes a change (a new entity, a link to an existing entity, or a field-set on an entity), then the user shall be prompted to approve or reject that individual change in an interactive TUI.
 - Forte shall support a `--yes` flag on `doc ingest` that auto-approves all proposed changes, so that agents can run ingest non-interactively.
 - Given an ingest run is interrupted or fails partway through, when the user re-runs ingest on the same document, then previously approved changes shall be preserved and any remaining work shall be re-proposed.
