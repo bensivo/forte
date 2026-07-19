@@ -5,6 +5,8 @@ requires-python = ">=3.11"
 dependencies = [
     "click",
     "pyyaml>=6.0.3",
+    "python-docx",
+    "pypdf",
 ]
 
 [project.scripts]

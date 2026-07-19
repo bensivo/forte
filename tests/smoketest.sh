@@ -30,7 +30,7 @@ forte entity show 1
 ## verify: you see Alice's details
 
 # Remove Charlie
-forte entity remove 3
+forte entity remove 3 -y
 forte entity list
 ## verify: Charlie is not present
 
@@ -45,11 +45,42 @@ forte entity show 2
 ## verify: You see 'Bill', not 'Bob'
 
 # Testing listing entities with schema filters
+forte schema add meeting --field date --field attendees
 forte entity add meeting --name 1970-01-01-standup --field date=1970-01-01 --field attendees='alice,bob,bill'
 forte entity add meeting --name 1970-01-02-standup --field date=1970-01-02 --field attendees='alice,bob,bill'
 forte entity list --schema meeting
 ## verify: you see the right entity when listed
 
+# Ingest a doc
+echo "Notes from standup. Alice and Bill discussed the roadmap." > notes.md
+forte doc ingest notes.md
+forte doc list
+## verify: notes.md shows up as doc #1, named "notes.md"
+
+# Ingest a second doc with an explicit name
+echo "Design doc for the new roadmap." > design.md
+forte doc ingest design.md --name "Roadmap Design Doc"
+forte doc list
+## verify: doc #2 is named "Roadmap Design Doc", not "design.md"
+
+forte doc show 1
+## verify: you see the source path, ingested timestamp, extracted text, and "Mentions: (none)"
+
+# Re-ingesting the same file is a no-op
+forte doc ingest notes.md
+forte doc list
+## verify: still only one doc listed (not duplicated)
+
+# Link the doc to Alice and Bill
+forte doc link 1 1
+forte doc link 1 2
+forte doc show 1
+## verify: you see entity #1 and entity #2 listed under Mentions
+
+# Unlink Bill
+forte doc unlink 1 2
+forte doc show 1
+## verify: only entity #1 (Alice) remains under Mentions
 
 # Go back to the original dir
 popd

@@ -11,6 +11,7 @@ _DDL: list[str] = [
     """
     CREATE TABLE documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
         source_path TEXT,
         content_hash TEXT,
         raw_path TEXT,

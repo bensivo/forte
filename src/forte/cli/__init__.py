@@ -4,7 +4,18 @@ from pathlib import Path
 
 import click
 
+from forte.db.document_repository import DocumentRepository
+from forte.db.mention_repository import MentionRepository
+from forte.domain.document_markdown import from_markdown
 from forte.services.discovery import VaultNotFoundError, find_vault_root
+from forte.services.document import (
+    DocumentError,
+    get_document,
+    ingest_document,
+    link_document,
+    list_documents,
+    unlink_document,
+)
 from forte.services.entity import (
     EntityError,
     add_entity,
@@ -203,6 +214,17 @@ def entity_show(id: int) -> None:
         click.echo("")
         click.echo(ent.body)
 
+    mentions = MentionRepository(root).list_for_entity(ent.id)
+    click.echo("")
+    if mentions:
+        click.echo("Mentions:")
+        for m in mentions:
+            mentioned_doc = DocumentRepository(root).get(m.doc_id)
+            doc_name = mentioned_doc.name if mentioned_doc else "(unknown)"
+            click.echo(f"  doc #{m.doc_id}: {doc_name}")
+    else:
+        click.echo("Mentions: (none)")
+
 
 @entity.command("edit")
 @click.argument("id", type=int)
@@ -270,3 +292,120 @@ def entity_remove(id: int, yes: bool) -> None:
         raise click.ClickException(str(e))
 
     click.echo(f"Removed entity #{id}.")
+
+
+@main.group()
+def doc() -> None:
+    """Ingest and browse documents in a vault."""
+
+
+@doc.command("ingest")
+@click.argument("path", type=click.Path(exists=False))
+@click.option(
+    "--name", default=None, help="Human-readable name for the doc (defaults to filename)."
+)
+def doc_ingest(path: str, name: str | None) -> None:
+    """Ingest the file at PATH into the vault."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    try:
+        document = ingest_document(root, Path(path), name=name)
+    except DocumentError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Ingested doc #{document.id}: {document.name}")
+
+
+@doc.command("list")
+def doc_list() -> None:
+    """List all documents in the vault."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    documents = list_documents(root)
+    if not documents:
+        click.echo("No documents yet.")
+        return
+
+    for d in documents:
+        click.echo(f"#{d.id}  {d.name}")
+
+
+@doc.command("show")
+@click.argument("id", type=int)
+def doc_show(id: int) -> None:
+    """Show a single document by ID."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    try:
+        document = get_document(root, id)
+    except DocumentError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"#{document.id} {document.name}")
+    click.echo(f"Source: {document.source_path}")
+    click.echo(f"Ingested: {document.ingested_at}")
+    click.echo(f"Status: {document.status}")
+
+    if document.processed_path:
+        processed_text = (root / document.processed_path).read_text()
+        parsed = from_markdown(processed_text)
+        click.echo("")
+        click.echo(parsed.body)
+
+    mentions = MentionRepository(root).list_for_doc(document.id)
+    click.echo("")
+    if mentions:
+        click.echo("Mentions:")
+        for m in mentions:
+            try:
+                entity_name = get_entity(root, m.entity_id).name
+            except EntityError:
+                entity_name = "(unknown)"
+            click.echo(f"  entity #{m.entity_id}: {entity_name}")
+    else:
+        click.echo("Mentions: (none)")
+
+
+@doc.command("link")
+@click.argument("id", type=int)
+@click.argument("entity_id", type=int)
+def doc_link(id: int, entity_id: int) -> None:
+    """Link document ID to entity ENTITY_ID."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    try:
+        link_document(root, id, entity_id)
+    except DocumentError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Linked doc #{id} to entity #{entity_id}")
+
+
+@doc.command("unlink")
+@click.argument("id", type=int)
+@click.argument("entity_id", type=int)
+def doc_unlink(id: int, entity_id: int) -> None:
+    """Unlink document ID from entity ENTITY_ID."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    try:
+        unlink_document(root, id, entity_id)
+    except DocumentError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Unlinked doc #{id} from entity #{entity_id}")

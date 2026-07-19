@@ -290,6 +290,30 @@ def test_show_happy_path() -> None:
         assert "Acme" in shown.output
         assert "role" in shown.output
         assert "Engineer" in shown.output
+        assert "Mentions: (none)" in shown.output
+
+
+def test_show_lists_linked_docs() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _init_vault(runner)
+        _add_person_schema(runner)
+        runner.invoke(
+            main, ["entity", "add", "person", "--name", "Ben Sivongxay"]
+        )
+
+        Path("notes.md").write_text("Some notes about Ben.")
+        ingested = runner.invoke(main, ["doc", "ingest", "notes.md"])
+        assert ingested.exit_code == 0, ingested.output
+
+        linked = runner.invoke(main, ["doc", "link", "1", "1"])
+        assert linked.exit_code == 0, linked.output
+
+        shown = runner.invoke(main, ["entity", "show", "1"])
+        assert shown.exit_code == 0, shown.output
+        assert "Mentions:" in shown.output
+        assert "doc #1" in shown.output
+        assert "notes.md" in shown.output
 
 
 def test_show_not_found_errors() -> None:
