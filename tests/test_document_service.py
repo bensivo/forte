@@ -18,6 +18,7 @@ from forte.services.document import (
     ingest_document,
     link_document,
     list_documents,
+    remove_document,
     unlink_document,
 )
 from forte.services.entity import add_entity
@@ -211,3 +212,50 @@ def test_unlink_document_not_found_entity(tmp_path: Path) -> None:
 
     with pytest.raises(EntityNotFoundError):
         unlink_document(root, doc.id, 999)
+
+
+# --- remove_document -----------------------------------------------------------
+
+
+def test_remove_document_happy_path(tmp_path: Path) -> None:
+    root = _vault(tmp_path)
+    src = _write(tmp_path / "kickoff.md", "hello world")
+    doc = ingest_document(root, src)
+
+    layout = VaultLayout(root)
+    raw_path = layout.root / doc.raw_path
+    processed_path = layout.root / doc.processed_path
+    assert raw_path.exists()
+    assert processed_path.exists()
+
+    remove_document(root, doc.id)
+
+    assert list_documents(root) == []
+    assert not raw_path.exists()
+    assert not processed_path.exists()
+    with pytest.raises(DocumentNotFoundError):
+        get_document(root, doc.id)
+
+
+def test_remove_document_not_found(tmp_path: Path) -> None:
+    root = _vault(tmp_path)
+
+    with pytest.raises(DocumentNotFoundError):
+        remove_document(root, 999)
+
+
+def test_remove_document_cleans_up_mentions_but_not_entity(tmp_path: Path) -> None:
+    root, doc, entity = _vault_with_entity(tmp_path)
+    link_document(root, doc.id, entity.id)
+    assert MentionRepository(root).exists(doc.id, entity.id)
+
+    remove_document(root, doc.id)
+
+    assert not MentionRepository(root).exists(doc.id, entity.id)
+    assert MentionRepository(root).list_for_doc(doc.id) == []
+
+    from forte.services.entity import get_entity
+
+    still_there = get_entity(root, entity.id)
+    assert still_there.id == entity.id
+    assert still_there.name == entity.name

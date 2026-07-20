@@ -150,3 +150,16 @@ def unlink_document(root: Path, doc_id: int, entity_id: int) -> None:
     if not mentions.exists(doc_id, entity_id):
         return
     mentions.remove(doc_id, entity_id)
+
+
+def remove_document(root: Path, id: int) -> None:
+    """Remove the document with the given id, or raise DocumentNotFoundError.
+
+    Cleans up all ``mentions`` rows referencing the document before deleting
+    it. Entities themselves are never touched or deleted.
+    """
+    repo = DocumentRepository(root)
+    if repo.get(id) is None:
+        raise DocumentNotFoundError(f"Document #{id} does not exist.")
+    MentionRepository(root).remove_for_doc(id)
+    repo.remove(id)

@@ -32,6 +32,9 @@ class DocumentRepository:
     def _rel_path(self, path: Path) -> str:
         return str(path.relative_to(self._root))
 
+    def _abs_path(self, rel_path: str) -> Path:
+        return self._root / rel_path
+
     def _resolve_raw_path(self, filename: str) -> Path:
         """Pick the on-disk path for a raw copy, disambiguating collisions.
 
@@ -172,6 +175,29 @@ class DocumentRepository:
         if row is None:
             return None
         return self._row_to_document(row)
+
+    def remove(self, doc_id: int) -> None:
+        """Delete the raw/processed files and the ``documents`` row together."""
+        conn = sqlite3.connect(self._layout.db_path)
+        try:
+            row = conn.execute(
+                "SELECT raw_path, processed_path FROM documents WHERE id = ?",
+                (doc_id,),
+            ).fetchone()
+            with conn:
+                conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+                if row is not None:
+                    raw_path, processed_path = row
+                    if raw_path is not None:
+                        abs_raw_path = self._abs_path(raw_path)
+                        if abs_raw_path.exists():
+                            abs_raw_path.unlink()
+                    if processed_path is not None:
+                        abs_processed_path = self._abs_path(processed_path)
+                        if abs_processed_path.exists():
+                            abs_processed_path.unlink()
+        finally:
+            conn.close()
 
     @staticmethod
     def _row_to_document(row: tuple) -> Document:

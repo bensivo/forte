@@ -334,6 +334,115 @@ def test_unlink_nonexistent_entity_errors() -> None:
         assert "not" in result.output.lower()
 
 
+def test_remove_with_yes_removes_everywhere() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem() as tmp:
+        root = Path(tmp)
+        _init_vault(runner)
+
+        Path("note.md").write_text("# Hello\n\nSome content.\n")
+        ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
+        assert ingest.exit_code == 0, ingest.output
+
+        raw_files = list((root / "docs" / "raw").iterdir())
+        processed_files = list((root / "docs" / "processed").iterdir())
+        assert len(raw_files) == 1
+        assert len(processed_files) == 1
+
+        result = runner.invoke(main, ["doc", "remove", "1", "--yes"])
+        assert result.exit_code == 0, result.output
+        assert "Removed doc #1: note.md" in result.output
+
+        assert not raw_files[0].exists()
+        assert not processed_files[0].exists()
+
+        listed = runner.invoke(main, ["doc", "list"])
+        assert listed.exit_code == 0, listed.output
+        assert "note.md" not in listed.output
+        assert "No documents yet." in listed.output
+
+        shown = runner.invoke(main, ["doc", "show", "1"])
+        assert shown.exit_code != 0
+
+
+def test_remove_doc_with_mentions_leaves_entity_intact() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _init_vault(runner)
+
+        Path("note.md").write_text("# Hello\n\nSome content.\n")
+        ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
+        assert ingest.exit_code == 0, ingest.output
+
+        schema_result = runner.invoke(main, ["schema", "add", "person"])
+        assert schema_result.exit_code == 0, schema_result.output
+        entity_result = runner.invoke(
+            main, ["entity", "add", "person", "--name", "Alice"]
+        )
+        assert entity_result.exit_code == 0, entity_result.output
+
+        link = runner.invoke(main, ["doc", "link", "1", "1"])
+        assert link.exit_code == 0, link.output
+
+        result = runner.invoke(main, ["doc", "remove", "1", "--yes"])
+        assert result.exit_code == 0, result.output
+
+        shown_doc = runner.invoke(main, ["doc", "show", "1"])
+        assert shown_doc.exit_code != 0
+
+        shown_entity = runner.invoke(main, ["entity", "show", "1"])
+        assert shown_entity.exit_code == 0, shown_entity.output
+        assert "Alice" in shown_entity.output
+
+
+def test_remove_unknown_id_errors() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _init_vault(runner)
+
+        result = runner.invoke(main, ["doc", "remove", "999", "--yes"])
+        assert result.exit_code != 0
+        assert "not" in result.output.lower()
+
+        listed = runner.invoke(main, ["doc", "list"])
+        assert "No documents yet." in listed.output
+
+
+def test_remove_prompt_aborted_on_no() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _init_vault(runner)
+
+        Path("note.md").write_text("# Hello\n\nSome content.\n")
+        ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
+        assert ingest.exit_code == 0, ingest.output
+
+        result = runner.invoke(main, ["doc", "remove", "1"], input="n\n")
+        assert result.exit_code == 0, result.output
+        assert "Aborted" in result.output
+
+        shown = runner.invoke(main, ["doc", "show", "1"])
+        assert shown.exit_code == 0, shown.output
+        assert "note.md" in shown.output
+
+
+def test_remove_prompt_confirmed_on_yes() -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _init_vault(runner)
+
+        Path("note.md").write_text("# Hello\n\nSome content.\n")
+        ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
+        assert ingest.exit_code == 0, ingest.output
+
+        result = runner.invoke(main, ["doc", "remove", "1"], input="y\n")
+        assert result.exit_code == 0, result.output
+        assert "Removed doc #1: note.md" in result.output
+
+        shown = runner.invoke(main, ["doc", "show", "1"])
+        assert shown.exit_code != 0
+
+
 def test_unlink_never_linked_is_noop_success() -> None:
     runner = CliRunner()
     with runner.isolated_filesystem():

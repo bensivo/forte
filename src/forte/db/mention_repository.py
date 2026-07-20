@@ -51,6 +51,18 @@ class MentionRepository:
         finally:
             conn.close()
 
+    def remove_for_doc(self, doc_id: int) -> None:
+        """Delete all mention rows for a given doc; safe no-op if none match."""
+        conn = sqlite3.connect(self._layout.db_path)
+        try:
+            with conn:
+                conn.execute(
+                    "DELETE FROM mentions WHERE doc_id = ?",
+                    (doc_id,),
+                )
+        finally:
+            conn.close()
+
     def list_for_doc(self, doc_id: int) -> list[Mention]:
         """Return all mentions for a given doc."""
         conn = sqlite3.connect(self._layout.db_path)

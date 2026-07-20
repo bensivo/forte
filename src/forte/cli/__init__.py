@@ -10,10 +10,12 @@ from forte.domain.document_markdown import from_markdown
 from forte.services.discovery import VaultNotFoundError, find_vault_root
 from forte.services.document import (
     DocumentError,
+    DocumentNotFoundError,
     get_document,
     ingest_document,
     link_document,
     list_documents,
+    remove_document,
     unlink_document,
 )
 from forte.services.entity import (
@@ -409,3 +411,30 @@ def doc_unlink(id: int, entity_id: int) -> None:
         raise click.ClickException(str(e))
 
     click.echo(f"Unlinked doc #{id} from entity #{entity_id}")
+
+
+@doc.command("remove")
+@click.argument("id", type=int)
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
+def doc_remove(id: int, yes: bool) -> None:
+    """Remove the document with the given ID."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    try:
+        document = get_document(root, id)
+    except DocumentNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    if not yes and not click.confirm(f"Remove doc #{id}: {document.name}?"):
+        click.echo("Aborted.")
+        return
+
+    try:
+        remove_document(root, id)
+    except DocumentNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Removed doc #{id}: {document.name}")

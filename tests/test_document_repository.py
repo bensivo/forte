@@ -121,6 +121,47 @@ def test_find_by_identity(tmp_path: Path) -> None:
     assert repo.find_by_identity("/nonexistent/path.txt", content_hash) is None
 
 
+def test_remove_deletes_row_and_files(tmp_path: Path) -> None:
+    _vault(tmp_path)
+    repo = DocumentRepository(tmp_path)
+    layout = VaultLayout(tmp_path)
+
+    source = tmp_path / "note.txt"
+    source.write_text("hi", encoding="utf-8")
+    content_hash = compute_content_hash(source.read_bytes())
+    stored = repo.add(source, content_hash, "hi", "note")
+
+    raw_path = layout.docs_raw_dir / "note.txt"
+    processed_path = layout.docs_processed_dir / f"{stored.id}.md"
+    assert raw_path.is_file()
+    assert processed_path.is_file()
+
+    repo.remove(stored.id)
+
+    assert repo.get(stored.id) is None
+    assert _row(layout.db_path, stored.id) is None
+    assert not raw_path.exists()
+    assert not processed_path.exists()
+
+
+def test_remove_missing_files_does_not_raise(tmp_path: Path) -> None:
+    _vault(tmp_path)
+    repo = DocumentRepository(tmp_path)
+    layout = VaultLayout(tmp_path)
+
+    source = tmp_path / "note.txt"
+    source.write_text("hi", encoding="utf-8")
+    content_hash = compute_content_hash(source.read_bytes())
+    stored = repo.add(source, content_hash, "hi", "note")
+
+    (layout.docs_raw_dir / "note.txt").unlink()
+    (layout.docs_processed_dir / f"{stored.id}.md").unlink()
+
+    repo.remove(stored.id)
+
+    assert repo.get(stored.id) is None
+
+
 def test_raw_copy_filename_collision_disambiguates(tmp_path: Path) -> None:
     _vault(tmp_path)
     repo = DocumentRepository(tmp_path)

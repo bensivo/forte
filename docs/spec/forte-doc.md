@@ -1,6 +1,6 @@
 # `forte doc` Spec
 
-Behavior spec for the `forte doc` command group — `forte doc ingest`, `forte doc list`, `forte doc show`, `forte doc link`, and `forte doc unlink` — which bring raw documents into a Forte vault and manually associate them with entities. **Scope cut for this batch:** `doc ingest` performs only the first pipeline step (copy the source into `docs/raw/`) plus a new "extract raw text" step that writes the extracted text into `docs/processed/` with metadata frontmatter, then stops — there is no LLM call, no automatic entity extraction, no entity-linking proposals, and no review TUI yet. Because automatic linking isn't implemented yet, this batch also adds `doc link`/`doc unlink`, manual commands that directly create or remove rows in the `mentions` table so a user (or agent) can hand-link a processed doc to an existing entity. Unlike entities, documents are **not** dual-written as structured, editable knowledge: a doc has exactly two on-disk artifacts (the immutable raw copy and the derived processed copy) plus one row in the SQLite `documents` table; `docs/processed/` is regenerated output, not something a user hand-maintains. These commands operate on an existing vault, discovered git-style by walking up from the current working directory to find a `.forte/` directory.
+Behavior spec for the `forte doc` command group — `forte doc ingest`, `forte doc list`, `forte doc show`, `forte doc link`, `forte doc unlink`, and `forte doc remove` — which bring raw documents into a Forte vault and manually associate them with entities. **Scope cut for this batch:** `doc ingest` performs only the first pipeline step (copy the source into `docs/raw/`) plus a new "extract raw text" step that writes the extracted text into `docs/processed/` with metadata frontmatter, then stops — there is no LLM call, no automatic entity extraction, no entity-linking proposals, and no review TUI yet. Because automatic linking isn't implemented yet, this batch also adds `doc link`/`doc unlink`, manual commands that directly create or remove rows in the `mentions` table so a user (or agent) can hand-link a processed doc to an existing entity. Unlike entities, documents are **not** dual-written as structured, editable knowledge: a doc has exactly two on-disk artifacts (the immutable raw copy and the derived processed copy) plus one row in the SQLite `documents` table; `docs/processed/` is regenerated output, not something a user hand-maintains. These commands operate on an existing vault, discovered git-style by walking up from the current working directory to find a `.forte/` directory.
 
 ## Scenarios
 
@@ -214,15 +214,79 @@ Then the process prints an error message indicating the entity was not found
 And the process exits with a non-zero status code
 ```
 
+### Scenario: Remove an existing document
+
+```gherkin
+Given the current working directory is inside a Forte vault
+And a document with id 7 exists, with a raw file in `docs/raw/` and a processed file in `docs/processed/`
+When the user runs `forte doc remove 7` and confirms the prompt
+Then the process prints a confirmation message naming the document's id and name
+And the process exits with status code 0
+And the document's raw file is deleted from `docs/raw/`
+And the document's processed file is deleted from `docs/processed/`
+And the row for document 7 is no longer present in the `documents` table
+And any rows in the `mentions` table referencing document 7 are gone
+And running `forte doc list` afterward no longer includes document 7
+And running `forte doc show 7` afterward reports the document was not found
+```
+
+### Scenario: Removing a document with linked entities does not affect those entities
+
+```gherkin
+Given the current working directory is inside a Forte vault
+And a document with id 7 is linked to entity id 3
+When the user runs `forte doc remove 7 --yes`
+Then the process exits with status code 0
+And the row linking doc 7 and entity 3 is no longer present in the `mentions` table
+And entity id 3 itself still exists in the `entities` table, unmodified
+And running `forte entity show 3` afterward still displays entity 3's name, schema, and fields as before
+```
+
+### Scenario: Remove a non-existent document
+
+```gherkin
+Given the current working directory is inside a Forte vault
+And no document with id 99 exists
+When the user runs `forte doc remove 99`
+Then the process prints an error message indicating the document was not found
+And the process exits with a non-zero status code
+And no files are deleted from `docs/raw/` or `docs/processed/`
+And no row is removed from the `documents` table
+```
+
+### Scenario: Remove without confirmation prompts and aborts
+
+```gherkin
+Given the current working directory is inside a Forte vault
+And a document with id 7 exists
+When the user runs `forte doc remove 7` and does not confirm the prompt
+Then the process prints an "Aborted." message
+And the process exits with status code 0
+And the document's raw and processed files are still present on disk
+And the row for document 7 is still present in the `documents` table
+```
+
+### Scenario: The `--yes`/`-y` flag skips the confirmation prompt
+
+```gherkin
+Given the current working directory is inside a Forte vault
+And a document with id 7 exists
+When the user runs `forte doc remove 7 --yes` (or `forte doc remove 7 -y`)
+Then the process does not prompt for confirmation
+And the process prints a confirmation message naming the document's id and name
+And the process exits with status code 0
+And the document is removed as in the "Remove an existing document" scenario
+```
+
 ### Scenario: Run a doc subcommand outside a vault
 
 ```gherkin
 Given the current working directory is not inside a Forte vault
 And no `.forte/` directory exists in the current directory or any ancestor
-When the user runs any `forte doc` subcommand (`ingest`, `list`, `show`, `link`, or `unlink`)
+When the user runs any `forte doc` subcommand (`ingest`, `list`, `show`, `link`, `unlink`, or `remove`)
 Then the process prints an error message indicating the user is not inside a Forte vault
 And the process exits with a non-zero status code
-And no document is ingested, listed, shown, linked, or unlinked
+And no document is ingested, listed, shown, linked, unlinked, or removed
 ```
 
 ## Out of scope
@@ -234,5 +298,4 @@ And no document is ingested, listed, shown, linked, or unlinked
 - **`ingest_changes` / resumable ingest** — this batch's `ingest` is a single atomic step (copy + extract + record), not a multi-step pipeline with persisted intermediate proposals.
 - **`--yes` auto-approve flag** — not applicable since there is no proposal step to approve.
 - **`doc show` displaying full entity details** — it lists linked entity ids only; richer display (entity name, schema, fields) is deferred.
-- **`forte doc remove`** — not implemented in this batch.
 - **OCR, audio, web, and email ingestion** — `doc ingest` only supports `.md`, `.txt`, `.docx`, and `.pdf` in this batch.
