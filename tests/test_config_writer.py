@@ -14,6 +14,9 @@ def test_write_default_config_creates_nonempty_file_with_comment(tmp_path):
     contents = config_path.read_text(encoding="utf-8")
     assert contents.strip() != ""
     assert any(line.lstrip().startswith("#") for line in contents.splitlines())
+    # Default config lays down the documented model + api_keys structure.
+    assert "extraction: claude-haiku-4-5" in contents
+    assert "anthropic: ${ANTHROPIC_API_KEY}" in contents
 
 
 def test_write_default_config_refuses_to_overwrite(tmp_path):

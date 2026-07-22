@@ -111,7 +111,7 @@ def get_document(root: Path, id: int) -> Document:
     return document
 
 
-def link_document(root: Path, doc_id: int, entity_id: int) -> None:
+def link_document(root: Path, doc_id: int, entity_id: int, quote: str = "") -> None:
     """Link a document to an entity by inserting a ``mentions`` row.
 
     Raises:
@@ -119,7 +119,9 @@ def link_document(root: Path, doc_id: int, entity_id: int) -> None:
       - EntityNotFoundError: no entity with ``entity_id``.
 
     If the pair is already linked, this is a no-op (per spec) — no
-    duplicate row is created.
+    duplicate row is created. ``quote`` is an optional supporting quote
+    (e.g. cited by the agent pipeline) persisted onto the mention row; the
+    manual ``doc link`` CLI command leaves it empty, as before.
     """
     if DocumentRepository(root).get(doc_id) is None:
         raise DocumentNotFoundError(f"Document #{doc_id} does not exist.")
@@ -129,7 +131,7 @@ def link_document(root: Path, doc_id: int, entity_id: int) -> None:
     mentions = MentionRepository(root)
     if mentions.exists(doc_id, entity_id):
         return
-    mentions.add(doc_id, entity_id)
+    mentions.add(doc_id, entity_id, quote)
 
 
 def unlink_document(root: Path, doc_id: int, entity_id: int) -> None:

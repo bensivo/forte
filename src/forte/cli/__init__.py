@@ -4,9 +4,13 @@ from pathlib import Path
 
 import click
 
+from forte.cli.review_tui import InteractiveReviewer
 from forte.db.document_repository import DocumentRepository
 from forte.db.mention_repository import MentionRepository
 from forte.domain.document_markdown import from_markdown
+from forte.services.agent import ProcessResult, process_document
+from forte.services.config import Config, ConfigError, load_config, require_api_key
+from forte.services.cost import format_cost_summary
 from forte.services.discovery import VaultNotFoundError, find_vault_root
 from forte.services.document import (
     DocumentError,
@@ -28,12 +32,15 @@ from forte.services.entity import (
 )
 from forte.services.init import VaultAlreadyExistsError
 from forte.services.init import init as init_vault
+from forte.services.llm import AnthropicLLMClient, LLMClient
+from forte.services.review import AutoApproveReviewer
 from forte.services.schema import (
     SchemaError,
     add_schema,
     list_schemas,
     remove_schema,
 )
+from forte.services.structured import StructuredCallError
 
 
 def _parse_key_value(token: str) -> tuple[str, str]:
@@ -438,3 +445,98 @@ def doc_remove(id: int, yes: bool) -> None:
         raise click.ClickException(str(e))
 
     click.echo(f"Removed doc #{id}: {document.name}")
+
+
+def _build_llm_client(config: Config) -> LLMClient:
+    """Construct the real LLM client from vault config.
+
+    This is a construction seam: tests monkeypatch this function to return a
+    :class:`~forte.services.llm.StubLLMClient` so the whole test suite stays
+    deterministic and free. Production code always gets a real
+    :class:`~forte.services.llm.AnthropicLLMClient` here.
+    """
+    return AnthropicLLMClient(model=config.extraction_model, api_key=require_api_key(config))
+
+
+def _run_agent_process(root: Path, doc_id: int, *, yes: bool, dry_run: bool) -> None:
+    """Shared process-and-render logic for `agent process` and `agent ingest`."""
+    try:
+        config = load_config(root)
+        llm = _build_llm_client(config)
+    except ConfigError as e:
+        raise click.ClickException(str(e))
+
+    reviewer = AutoApproveReviewer() if yes else InteractiveReviewer()
+
+    try:
+        result = process_document(root, doc_id, llm=llm, reviewer=reviewer, dry_run=dry_run)
+    except (DocumentNotFoundError, DocumentError) as e:
+        raise click.ClickException(str(e))
+    except StructuredCallError as e:
+        raise click.ClickException(f"Agent run failed: {e}. Nothing was committed.")
+
+    _render_process_result(config, result)
+
+
+def _render_process_result(config: Config, result: ProcessResult) -> None:
+    if not result.approved_changes:
+        click.echo("Nothing to do: no proposals were generated for this document.")
+        click.echo(format_cost_summary(config.extraction_model, result.usage))
+        return
+
+    if result.dry_run:
+        click.echo(f"Dry run: {len(result.approved_changes)} change(s) would be committed:")
+        for change in result.approved_changes:
+            click.echo(f"  - {change}")
+        click.echo("Nothing was written.")
+    else:
+        report = result.commit_report
+        assert report is not None
+        click.echo(
+            f"Committed {len(report.successes)} change(s), "
+            f"{len(report.failures)} failure(s)."
+        )
+        for failure in report.failures:
+            click.echo(f"  FAILED: {failure.change} -- {failure.error}")
+
+    click.echo(format_cost_summary(config.extraction_model, result.usage))
+
+
+@main.group()
+def agent() -> None:
+    """Run the LLM agent pipeline over documents."""
+
+
+@agent.command("process")
+@click.argument("doc_id", type=int)
+@click.option("--yes", "-y", is_flag=True, help="Auto-approve all proposed changes.")
+@click.option("--dry-run", is_flag=True, help="Propose changes but write nothing.")
+def agent_process(doc_id: int, yes: bool, dry_run: bool) -> None:
+    """Run the extract/link/field-extract pipeline against document DOC_ID."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    _run_agent_process(root, doc_id, yes=yes, dry_run=dry_run)
+
+
+@agent.command("ingest")
+@click.argument("path", type=click.Path(exists=False))
+@click.option("--yes", "-y", is_flag=True, help="Auto-approve all proposed changes.")
+@click.option("--dry-run", is_flag=True, help="Propose changes but write nothing.")
+def agent_ingest(path: str, yes: bool, dry_run: bool) -> None:
+    """Ingest the file at PATH, then run the agent pipeline against it."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    try:
+        document = ingest_document(root, Path(path))
+    except DocumentError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Ingested doc #{document.id}: {document.name}")
+
+    _run_agent_process(root, document.id, yes=yes, dry_run=dry_run)
