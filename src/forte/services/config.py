@@ -24,11 +24,14 @@ import yaml
 from forte.domain.vault import VaultLayout
 
 DEFAULT_EXTRACTION_MODEL = "claude-haiku-4-5"
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 DEFAULT_CONFIG_CONTENT = (
     "# Forte vault config.\n"
     "model:\n"
     "  extraction: claude-haiku-4-5\n"
+    "embedding:\n"
+    "  model: sentence-transformers/all-MiniLM-L6-v2\n"
     "api_keys:\n"
     "  anthropic: ${ANTHROPIC_API_KEY}\n"
 )
@@ -49,6 +52,7 @@ class Config:
     """Resolved Forte vault configuration."""
 
     extraction_model: str
+    embedding_model: str
     anthropic_api_key: str | None
 
 
@@ -84,7 +88,8 @@ def load_config(root: Path) -> Config:
     """Read ``.forte/config.yaml`` from the vault at ``root`` into a Config.
 
     Tolerates a missing file and missing keys by falling back to defaults:
-    ``extraction_model`` defaults to ``claude-haiku-4-5`` and
+    ``extraction_model`` defaults to ``claude-haiku-4-5``,
+    ``embedding_model`` to ``sentence-transformers/all-MiniLM-L6-v2``, and
     ``anthropic_api_key`` to ``None``. Does not raise
     :class:`MissingAPIKeyError` — callers needing a key use
     :func:`require_api_key`.
@@ -109,7 +114,18 @@ def load_config(root: Path) -> Config:
     if isinstance(api_keys_section, dict):
         anthropic_api_key = _resolve_api_key(api_keys_section.get("anthropic"))
 
-    return Config(extraction_model=extraction_model, anthropic_api_key=anthropic_api_key)
+    embedding_section = data.get("embedding")
+    embedding_model = DEFAULT_EMBEDDING_MODEL
+    if isinstance(embedding_section, dict):
+        value = embedding_section.get("model")
+        if isinstance(value, str) and value:
+            embedding_model = value
+
+    return Config(
+        extraction_model=extraction_model,
+        embedding_model=embedding_model,
+        anthropic_api_key=anthropic_api_key,
+    )
 
 
 def require_api_key(config: Config) -> str:

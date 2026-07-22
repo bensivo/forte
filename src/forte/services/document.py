@@ -19,13 +19,18 @@ raised here to Click errors.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from forte.db.document_repository import DocumentRepository
 from forte.db.entity_repository import EntityRepository
 from forte.db.mention_repository import MentionRepository
 from forte.domain.document import Document, compute_content_hash
+from forte.services import indexing
+from forte.services.embedding import EmbeddingClient
 from forte.services.text_extraction import extract_text
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentError(Exception):
@@ -61,7 +66,12 @@ def _normalize_source_path(path: Path) -> str:
     return str(path.resolve())
 
 
-def ingest_document(root: Path, path: Path, name: str | None = None) -> Document:
+def ingest_document(
+    root: Path,
+    path: Path,
+    name: str | None = None,
+    embedding: EmbeddingClient | None = None,
+) -> Document:
     """Ingest a source file into the vault at ``root``.
 
     Copies the file into ``docs/raw/``, extracts its plain text into
@@ -76,8 +86,12 @@ def ingest_document(root: Path, path: Path, name: str | None = None) -> Document
 
     If a document with the same normalized source path and content hash
     already exists, this is a no-op: the existing :class:`Document` is
-    returned and nothing new is written (per spec) — ``name`` is ignored in
-    that case.
+    returned and nothing new is written (per spec) — ``name`` is ignored, and
+    no re-indexing happens, in that case.
+
+    If ``embedding`` is given, a newly-ingested document's processed body is
+    (best-effort) chunked, embedded, and written to the search index after the
+    primary write commits; when omitted, no indexing happens at all.
     """
     if not path.exists():
         raise SourceFileNotFoundError(f"Source file not found: {path}")
@@ -95,7 +109,19 @@ def ingest_document(root: Path, path: Path, name: str | None = None) -> Document
         return existing
 
     doc_name = name if name else path.name
-    return repo.add(Path(normalized_source_path), content_hash, extracted_text, doc_name)
+    document = repo.add(Path(normalized_source_path), content_hash, extracted_text, doc_name)
+
+    if embedding is not None and document.id is not None:
+        # The search index is derived data — a re-embed failure must never
+        # break the already-committed raw/processed/SQLite write. Log and skip.
+        try:
+            indexing.index_source(root, "doc", document.id, extracted_text, embedding)
+        except Exception:  # noqa: BLE001 — index is derived; never fail the primary write.
+            logger.warning(
+                "Failed to re-embed document #%s; search index may be stale.", document.id
+            )
+
+    return document
 
 
 def list_documents(root: Path) -> list[Document]:
@@ -154,14 +180,18 @@ def unlink_document(root: Path, doc_id: int, entity_id: int) -> None:
     mentions.remove(doc_id, entity_id)
 
 
-def remove_document(root: Path, id: int) -> None:
+def remove_document(root: Path, id: int, embedding: EmbeddingClient | None = None) -> None:
     """Remove the document with the given id, or raise DocumentNotFoundError.
 
     Cleans up all ``mentions`` rows referencing the document before deleting
-    it. Entities themselves are never touched or deleted.
+    it. Entities themselves are never touched or deleted. The document's
+    search-index rows are always dropped as well — deleting derived chunks is
+    local and free and needs no embedding model, so it keeps the index
+    consistent even when no ``embedding`` client is passed.
     """
     repo = DocumentRepository(root)
     if repo.get(id) is None:
         raise DocumentNotFoundError(f"Document #{id} does not exist.")
     MentionRepository(root).remove_for_doc(id)
     repo.remove(id)
+    indexing.delete_source_index(root, "doc", id)

@@ -8,6 +8,7 @@ dependencies = [
     "python-docx",
     "pypdf",
     "anthropic",
+    "sentence-transformers>=5.6.0",
 ]
 
 [project.scripts]

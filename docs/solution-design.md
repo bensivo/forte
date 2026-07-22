@@ -241,9 +241,10 @@ Additional keys added as needed. API keys can be interpolated from environment v
 
 ## Open Questions
 
-- **Embedding provider for `entity search`** — deferred pending a spike comparing local
-  `sentence-transformers` vs. a hosted API (e.g. Voyage), on performance, ease of use, and
-  cost. Semantic search is deferred with it.
+- **Embedding provider / vector column** — resolved: provider is local
+  `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim); vector storage is a plain BLOB
+  column of float32 bytes on `chunks` with brute-force cosine similarity in Python at MVP
+  scale, `sqlite-vec` deferred as a future swap-in if the corpus grows enough to need it.
 - **Field-value provenance representation** — a dedicated `entity_field_values` table vs.
   encoding source-doc refs inside `entities.fields_json`.
 - Per-step model overrides in config (single model vs. one per pipeline step).

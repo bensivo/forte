@@ -5,7 +5,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-# entity_embeddings table intentionally deferred until the embeddings decision lands.
+# Vector storage decision (resolves the prior "entity_embeddings deferred" note):
+# at this vault's modest scale (hundreds-low-thousands of chunks) we store each embedding
+# as a plain BLOB of float32 bytes on the `chunks` row and do brute-force cosine similarity
+# in Python at query time, rather than adding a sqlite-vec dependency. The chosen embedding
+# model (sentence-transformers/all-MiniLM-L6-v2) produces 384-dim vectors; the BLOB column
+# doesn't need a fixed width in DDL. If corpus size grows enough that brute-force scan is
+# too slow, swap in sqlite-vec (or another ANN index) behind the same read/write helpers.
 
 _DDL: list[str] = [
     """
@@ -59,6 +65,29 @@ _DDL: list[str] = [
         kind TEXT,
         payload_json TEXT,
         status TEXT
+    )
+    """,
+    """
+    CREATE TABLE chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_type TEXT,
+        source_id INTEGER,
+        chunk_index INTEGER,
+        text TEXT,
+        embedding BLOB,
+        model TEXT
+    )
+    """,
+    """
+    CREATE VIRTUAL TABLE chunks_fts USING fts5(
+        text,
+        chunk_id UNINDEXED
+    )
+    """,
+    """
+    CREATE TABLE index_state (
+        key TEXT PRIMARY KEY,
+        value TEXT
     )
     """,
 ]

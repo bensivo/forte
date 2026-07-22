@@ -226,7 +226,7 @@ And no entity is created, listed, shown, edited, or removed
 
 ## Out of scope
 
-- **`forte entity search`** — semantic/entity search is deferred along with the embeddings decision and is not part of this batch.
+- **`forte entity search`** — superseded by the unified `forte search` command, which searches both entities and documents together. See [docs/spec/forte-search.md](forte-search.md).
 - **Linked docs / mentions in `entity show`** — the PRD describes `entity show` as displaying an entity's fields *and* the documents that mention it. Mentions are produced by `forte doc ingest`, which does not exist yet, so the linked-docs section is empty for now (either omitted or shown as an explicit empty placeholder). Mention querying is not built in this batch.
 - **Schema-mutation cascade onto existing entities** — adding or removing a field on a schema and back-filling or stripping that field across its existing entities belongs to future `forte schema add-field` / `remove-field` commands. This batch only guarantees the structural field-set invariant holds at entity write time against the schema as it exists then.
 - **Reconciling hand-edits to markdown that bypass the CLI** — at MVP, editing an entity's markdown file directly (outside `forte entity edit`) is not detected or auto-reconciled with the SQLite index; drift is a known non-goal.

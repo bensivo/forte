@@ -15,6 +15,9 @@ EXPECTED_TABLES = {
     "entity_field_values",
     "mentions",
     "ingest_changes",
+    "chunks",
+    "chunks_fts",
+    "index_state",
 }
 
 
@@ -37,7 +40,8 @@ def test_initialize_database_creates_all_mvp_tables(tmp_path):
     assert db_path.exists()
     tables = _tables(db_path)
     assert EXPECTED_TABLES.issubset(tables)
-    # entity_embeddings is explicitly deferred.
+    # The embeddings deferral is resolved via the chunks table (BLOB embedding column),
+    # not a dedicated entity_embeddings table.
     assert "entity_embeddings" not in tables
 
 

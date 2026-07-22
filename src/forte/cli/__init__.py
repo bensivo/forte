@@ -29,6 +29,7 @@ from forte.services.document import (
     remove_document,
     unlink_document,
 )
+from forte.services.embedding import EmbeddingClient, SentenceTransformersEmbeddingClient
 from forte.services.entity import (
     EntityError,
     add_entity,
@@ -37,6 +38,7 @@ from forte.services.entity import (
     list_entities,
     remove_entity,
 )
+from forte.services.indexing import StaleIndexError, reindex_vault
 from forte.services.init import VaultAlreadyExistsError
 from forte.services.init import init as init_vault
 from forte.services.schema import (
@@ -45,6 +47,7 @@ from forte.services.schema import (
     list_schemas,
     remove_schema,
 )
+from forte.services.search import search as run_search
 
 
 def _parse_key_value(token: str) -> tuple[str, str]:
@@ -166,6 +169,9 @@ def entity_add(schema: str, name: str, aliases: tuple[str, ...], fields: tuple[s
     except VaultNotFoundError as e:
         raise click.ClickException(str(e))
 
+    config = load_config(root)
+    embedding = _build_embedding_client(root, config)
+
     field_values = dict(_parse_key_value(f) for f in fields)
 
     try:
@@ -175,6 +181,7 @@ def entity_add(schema: str, name: str, aliases: tuple[str, ...], fields: tuple[s
             name,
             aliases=list(aliases),
             field_values=field_values,
+            embedding=embedding,
         )
     except EntityError as e:
         raise click.ClickException(str(e))
@@ -268,6 +275,9 @@ def entity_edit(
     except VaultNotFoundError as e:
         raise click.ClickException(str(e))
 
+    config = load_config(root)
+    embedding = _build_embedding_client(root, config)
+
     parsed_fields = dict(_parse_key_value(f) for f in set_fields)
 
     try:
@@ -278,6 +288,7 @@ def entity_edit(
             set_fields=parsed_fields,
             add_aliases=list(add_aliases),
             remove_aliases=list(remove_aliases),
+            embedding=embedding,
         )
     except EntityError as e:
         raise click.ClickException(str(e))
@@ -299,8 +310,11 @@ def entity_remove(id: int, yes: bool) -> None:
         click.echo("Aborted.")
         return
 
+    config = load_config(root)
+    embedding = _build_embedding_client(root, config)
+
     try:
-        remove_entity(root, id)
+        remove_entity(root, id, embedding=embedding)
     except EntityError as e:
         raise click.ClickException(str(e))
 
@@ -324,8 +338,11 @@ def doc_ingest(path: str, name: str | None) -> None:
     except VaultNotFoundError as e:
         raise click.ClickException(str(e))
 
+    config = load_config(root)
+    embedding = _build_embedding_client(root, config)
+
     try:
-        document = ingest_document(root, Path(path), name=name)
+        document = ingest_document(root, Path(path), name=name, embedding=embedding)
     except DocumentError as e:
         raise click.ClickException(str(e))
 
@@ -445,12 +462,67 @@ def doc_remove(id: int, yes: bool) -> None:
         click.echo("Aborted.")
         return
 
+    config = load_config(root)
+    embedding = _build_embedding_client(root, config)
+
     try:
-        remove_document(root, id)
+        remove_document(root, id, embedding=embedding)
     except DocumentNotFoundError as e:
         raise click.ClickException(str(e))
 
     click.echo(f"Removed doc #{id}: {document.name}")
+
+
+@main.command("search")
+@click.argument("query")
+@click.option("--limit", "-n", default=10, show_default=True, help="Max results.")
+def search(query: str, limit: int) -> None:
+    """Search the vault's docs and entities for QUERY, ranked by relevance."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    config = load_config(root)
+    client = _build_embedding_client(root, config)
+
+    try:
+        results = run_search(root, query, limit=limit, embedding=client)
+    except StaleIndexError as e:
+        raise click.ClickException(str(e))
+
+    if not results:
+        click.echo("No results.")
+        return
+
+    for result in results:
+        click.echo(
+            f"[{result.score:.3f}] {result.source_type} #{result.source_id}  "
+            f"{result.title}  ({result.link})"
+        )
+        click.echo(f"      {result.snippet}")
+
+
+@main.command("reindex")
+def reindex() -> None:
+    """Rebuild the whole vault's search index from the authoritative markdown."""
+    try:
+        root = find_vault_root(Path.cwd())
+    except VaultNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    try:
+        config = load_config(root)
+    except ConfigError as e:
+        raise click.ClickException(str(e))
+
+    client = _build_embedding_client(root, config)
+    report = reindex_vault(root, client)
+
+    click.echo(
+        f"Reindexed {report.entities_indexed} entities and {report.docs_indexed} "
+        f"documents ({report.total_chunks} chunks)."
+    )
 
 
 def _build_llm_client(config: Config) -> LLMClient:
@@ -462,6 +534,22 @@ def _build_llm_client(config: Config) -> LLMClient:
     :class:`~forte.services.llm.AnthropicLLMClient` here.
     """
     return AnthropicLLMClient(model=config.extraction_model, api_key=require_api_key(config))
+
+
+def _build_embedding_client(root: Path, config: Config) -> EmbeddingClient:
+    """Construct the real embedding client from vault config.
+
+    This is a construction seam: tests monkeypatch this function to return a
+    :class:`~forte.services.embedding.StubEmbeddingClient` so the whole test
+    suite stays deterministic and free. Production code always gets a real
+    :class:`~forte.services.embedding.SentenceTransformersEmbeddingClient`
+    here. Model weights are cached under the vault's ``.forte/models`` (per
+    the user's preference), rather than a shared global cache.
+    """
+    return SentenceTransformersEmbeddingClient(
+        model_id=config.embedding_model,
+        cache_dir=root / ".forte" / "models",
+    )
 
 
 def _run_agent_process(root: Path, doc_id: int, *, yes: bool, dry_run: bool) -> None:
@@ -538,8 +626,11 @@ def agent_ingest(path: str, yes: bool, dry_run: bool) -> None:
     except VaultNotFoundError as e:
         raise click.ClickException(str(e))
 
+    config = load_config(root)
+    embedding = _build_embedding_client(root, config)
+
     try:
-        document = ingest_document(root, Path(path))
+        document = ingest_document(root, Path(path), embedding=embedding)
     except DocumentError as e:
         raise click.ClickException(str(e))
 

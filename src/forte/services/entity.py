@@ -14,11 +14,16 @@ the typed exceptions raised here to Click errors.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from forte.db.entity_repository import EntityRepository
 from forte.db.schema_repository import SchemaRepository
 from forte.domain.entity import Entity
+from forte.services import indexing
+from forte.services.embedding import EmbeddingClient
+
+logger = logging.getLogger(__name__)
 
 
 class EntityError(Exception):
@@ -37,6 +42,21 @@ class EntityNotFoundError(EntityError):
     """Raised when operating on an entity id that does not exist."""
 
 
+def _reembed_entity(root: Path, entity: Entity, embedding: EmbeddingClient) -> None:
+    """Best-effort re-index of an entity's body into the search index.
+
+    The search index is *derived* data, so a re-embed failure (e.g. the model
+    fails to load) must never break the already-committed markdown + SQLite
+    write. Failures are logged and swallowed; the primary write stands.
+    """
+    if entity.id is None:
+        return
+    try:
+        indexing.index_source(root, "entity", entity.id, entity.body, embedding)
+    except Exception:  # noqa: BLE001 — index is derived; never fail the primary write.
+        logger.warning("Failed to re-embed entity #%s; search index may be stale.", entity.id)
+
+
 def _apply_field_set(schema_fields: list[str], values: dict[str, str]) -> dict[str, str]:
     """Return a fields dict carrying exactly the schema's fields, in order.
 
@@ -53,6 +73,7 @@ def add_entity(
     name: str,
     aliases: list[str] | None = None,
     field_values: dict[str, str] | None = None,
+    embedding: EmbeddingClient | None = None,
 ) -> Entity:
     """Validate and create a new entity of ``schema`` in the vault at ``root``.
 
@@ -64,6 +85,10 @@ def add_entity(
     Omitted schema fields are back-filled with ``""`` so the stored entity
     carries exactly the schema's field set (in schema field order). Returns the
     created :class:`Entity` with its assigned id.
+
+    If ``embedding`` is given, the new entity's body is (best-effort) chunked,
+    embedded, and written to the search index after the primary markdown +
+    SQLite write commits; when omitted, no indexing happens at all.
     """
     aliases = list(aliases or [])
     field_values = dict(field_values or {})
@@ -86,7 +111,10 @@ def add_entity(
     fields = _apply_field_set(schema_obj.fields, field_values)
 
     entity = Entity(schema=schema, name=name, aliases=aliases, fields=fields)
-    return EntityRepository(root).add(entity)
+    created = EntityRepository(root).add(entity)
+    if embedding is not None:
+        _reembed_entity(root, created, embedding)
+    return created
 
 
 def list_entities(root: Path, schema: str | None = None) -> list[Entity]:
@@ -115,6 +143,7 @@ def edit_entity(
     set_fields: dict[str, str] | None = None,
     add_aliases: list[str] | None = None,
     remove_aliases: list[str] | None = None,
+    embedding: EmbeddingClient | None = None,
 ) -> Entity:
     """Edit an existing entity, dual-writing markdown + DB via the repository.
 
@@ -126,6 +155,10 @@ def edit_entity(
       - InvalidEntityError: new ``name`` is empty, or ``set_fields`` names a
         field the schema does not declare.
       - UnknownSchemaError: the entity's schema no longer exists.
+
+    If ``embedding`` is given, the entity's (possibly changed) body is
+    re-chunked, re-embedded, and its search-index rows replaced after the
+    primary write commits (best-effort); when omitted, no indexing happens.
 
     Returns the updated :class:`Entity`.
     """
@@ -172,12 +205,22 @@ def edit_entity(
     entity.aliases = aliases
 
     repo.update(entity)
+    if embedding is not None:
+        _reembed_entity(root, entity, embedding)
     return entity
 
 
-def remove_entity(root: Path, id: int) -> None:
-    """Remove the entity with the given id, or raise EntityNotFoundError."""
+def remove_entity(root: Path, id: int, embedding: EmbeddingClient | None = None) -> None:
+    """Remove the entity with the given id, or raise EntityNotFoundError.
+
+    The entity's search-index rows are always dropped on removal — deleting
+    derived chunks is local and free and needs no embedding model, so it keeps
+    the index consistent even when no ``embedding`` client is passed. The
+    ``embedding`` param is accepted for a uniform service signature but is not
+    required for the delete.
+    """
     repo = EntityRepository(root)
     if repo.get(id) is None:
         raise EntityNotFoundError(f"Entity #{id} does not exist.")
     repo.remove(id)
+    indexing.delete_source_index(root, "entity", id)
