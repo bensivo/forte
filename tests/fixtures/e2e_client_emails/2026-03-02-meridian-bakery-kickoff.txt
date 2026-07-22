@@ -1,0 +1,31 @@
+From: Priya Shah <priya@meridianbakery.com>
+To: Jordan Reyes <jordan.reyes.dev@gmail.com>
+Subject: Website project - let's get started!
+Date: Mon, 2 Mar 2026 09:14:00 -0800
+
+NOTE: This is an AI-generated test document, it's not real, and any resemblance to real people or places is coincidence.
+
+Hi Jordan,
+
+Thanks so much for hopping on a call last week. I'm excited to move forward with the
+new website for Meridian Bakery. As discussed, here's what we're hoping for in the
+first phase:
+
+- A clean homepage with rotating photos of our pastry case
+- An online ordering page for custom cake orders (no payment processing yet, just a
+  form that emails our team)
+- A page listing our two locations (Downtown and the new Riverside location opening
+  in May)
+- Basic mobile responsiveness
+
+Budget-wise we talked about $3,500 for this phase, paid half up front and half on
+delivery. Does that still work on your end?
+
+My business partner Danny Ferro will probably loop in on some of these emails too
+since he handles the Riverside location details.
+
+Looking forward to seeing what you come up with!
+
+Best,
+Priya Shah
+Owner, Meridian Bakery

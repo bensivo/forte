@@ -1,0 +1,28 @@
+From: Nate Bishop <nate@techstartventures.io>
+To: Jordan Reyes <jordan.reyes.dev@gmail.com>
+Subject: Re: MVP scope doc + contract
+Date: Sun, 15 Mar 2026 18:42:00 -0700
+
+NOTE: This is an AI-generated test document, it's not real, and any resemblance to real people or places is coincidence.
+
+Jordan,
+
+Reviewed the scope doc you sent over — looks good overall. A few notes from our CTO,
+Wendy Zhao, after she read through the API section:
+
+1. We'd like the auth flow to use magic links instead of passwords for V1, since our
+   target users (freelance photographers) hate remembering passwords.
+2. Wendy wants the backend on Postgres rather than Mongo, mostly for reporting later.
+3. Can we push the "team accounts" feature to V2? We want to launch single-user first
+   and validate before building multi-user.
+
+Assuming those are fine, I'll get the contract signed by Friday. We're targeting a
+closed beta launch by June 1st for about 50 photographers we've already got on a
+waitlist.
+
+Also — my co-founder Aisha Bello will be your main point of contact for design
+feedback going forward, I'm heads-down on fundraising for the next few weeks.
+
+Talk soon,
+Nate Bishop
+Founder, TechStart Ventures

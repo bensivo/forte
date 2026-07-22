@@ -1,0 +1,25 @@
+From: Priya Shah <priya@meridianbakery.com>
+To: Jordan Reyes <jordan.reyes.dev@gmail.com>
+Subject: Re: Website project - let's get started!
+Date: Wed, 6 May 2026 14:22:00 -0800
+
+NOTE: This is an AI-generated test document, it's not real, and any resemblance to real people or places is coincidence.
+
+Hi Jordan,
+
+The site looks great so far! Danny Ferro and I reviewed the staging link together
+and have a couple of change requests before we go live:
+
+1. The Riverside location page needs an update — Danny confirmed the opening date
+   moved from May to June 15th, so the "opening this May" banner needs to change.
+2. Could the custom cake order form include a field for allergy/dietary notes? We've
+   had a few customers email separately about nut allergies and it'd be easier to
+   have it all in one place.
+3. Danny also wants his name added to the "Meet the Team" section alongside mine,
+   since he's taking the lead on the Riverside location.
+
+Other than that we're really happy with it! Once these are in we should be ready
+for the second half of the payment.
+
+Thanks again,
+Priya

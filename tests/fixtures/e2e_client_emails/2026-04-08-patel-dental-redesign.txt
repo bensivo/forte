@@ -1,0 +1,29 @@
+From: Linda Osei <linda@patelfamilydental.com>
+To: Jordan Reyes <jordan.reyes.dev@gmail.com>
+Subject: Website redesign - feedback on mockups
+Date: Wed, 8 Apr 2026 11:05:00 -0700
+
+NOTE: This is an AI-generated test document, it's not real, and any resemblance to real people or places is coincidence.
+
+Hi Jordan,
+
+Dr. Patel and I looked over the three homepage mockups you sent for the practice
+website redesign. We both liked Option B best — the calming blue-green palette and
+the big "Book an Appointment" button at the top.
+
+A couple of changes:
+- Dr. Patel would like his bio and credentials moved higher on the About page, above
+  the associate dentists' bios.
+- We need a HIPAA-compliant contact form since patients sometimes mention medical
+  history when requesting appointments. Can you confirm the form vendor you're
+  planning to use supports that?
+- Our office manager before Linda (that's me!) used to handle the old WordPress site,
+  but none of us know the login anymore. Is that something you can help recover, or
+  do we start fresh?
+
+We're hoping to launch before Dr. Patel's practice anniversary event on May 20th if
+that's realistic given everything above.
+
+Thanks,
+Linda Osei
+Office Manager, Patel Family Dental

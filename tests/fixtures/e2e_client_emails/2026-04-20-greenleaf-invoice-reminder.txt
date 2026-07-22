@@ -1,0 +1,23 @@
+From: Tom Reilly <tom@greenleaflandscaping.com>
+To: Jordan Reyes <jordan.reyes.dev@gmail.com>
+Subject: Invoice #0042 - friendly reminder
+Date: Mon, 20 Apr 2026 07:50:00 -0700
+
+NOTE: This is an AI-generated test document, it's not real, and any resemblance to real people or places is coincidence.
+
+Hey Jordan,
+
+Hope the booking calendar plugin work is going well. Just a friendly nudge that
+invoice #0042 for $850 (the mobile menu fix + the contact form bug) was due last
+Friday. No rush, just don't want it to slip through the cracks on either end.
+
+Also, once that's squared away, I wanted to ask about a small add-on: could we get
+a "request a quote" form on the services page that emails both me and my crew lead,
+Hector Morales? Customers keep calling instead of using the contact form and Hector
+says it's easier for him to track requests if they land in his inbox directly.
+
+Let me know if you need anything from me to close out the invoice.
+
+Thanks,
+Tom Reilly
+Owner, GreenLeaf Landscaping
