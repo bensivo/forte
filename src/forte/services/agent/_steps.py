@@ -4,12 +4,12 @@ These are pure functions of ``(llm + data)``: no Click/Rich, no DB writes, no
 vault-root/repository access. Each step runs exactly one bounded-retry
 ``structured_call`` (or, for the no-candidate case in ``resolve_candidate``, no
 call at all) and returns its proposed change(s) plus the token
-:class:`~forte.services.usage.Usage` of the call, so the orchestrator can
+:class:`~forte.services.agent._usage.Usage` of the call, so the orchestrator can
 accumulate usage across the run.
 
 The steps compose the prompt templates + parse functions in
-:mod:`forte.services.prompts` with the reusable retry helper in
-:mod:`forte.services.structured`. Semantic, non-error filtering that must NOT
+:mod:`forte.services.agent._prompts` with the reusable retry helper in
+:mod:`forte.services.agent._structured`. Semantic, non-error filtering that must NOT
 trigger a retry (dropping unknown-schema candidates; dropping unsupported field
 values) lives here, after a successful parse — never inside the parse callback.
 """
@@ -18,15 +18,16 @@ from __future__ import annotations
 
 from forte.domain.entity import Entity
 from forte.services.linking import find_candidates
-from forte.services.llm import LLMClient
-from forte.services.pipeline_models import (
+
+from ._llm import LLMClient
+from ._pipeline_models import (
     CandidateEntity,
     FieldSetTarget,
     ProposedFieldSet,
     ProposedLink,
     ProposedNewEntity,
 )
-from forte.services.prompts import (
+from ._prompts import (
     EXTRACTION_SCHEMA,
     EXTRACTION_SYSTEM,
     FIELD_SYSTEM,
@@ -40,8 +41,8 @@ from forte.services.prompts import (
     make_link_parser,
     parse_extraction,
 )
-from forte.services.structured import structured_call
-from forte.services.usage import Usage
+from ._structured import structured_call
+from ._usage import Usage
 
 
 def extract_entities(

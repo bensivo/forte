@@ -8,16 +8,16 @@ from forte.db.entity_repository import EntityRepository
 from forte.db.mention_repository import MentionRepository
 from forte.db.schema_repository import SchemaRepository
 from forte.domain.schema import Schema
-from forte.services.commit import commit_changes
-from forte.services.document import ingest_document
-from forte.services.entity import add_entity, get_entity
-from forte.services.init import init
-from forte.services.pipeline_models import (
+from forte.services.agent._commit import commit_changes
+from forte.services.agent._pipeline_models import (
     FieldSetTarget,
     ProposedFieldSet,
     ProposedLink,
     ProposedNewEntity,
 )
+from forte.services.document import ingest_document
+from forte.services.entity import add_entity, get_entity
+from forte.services.init import init
 
 
 def _vault(tmp_path: Path) -> Path:

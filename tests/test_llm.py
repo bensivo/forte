@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from forte.services.llm import (
+from forte.services.agent._llm import (
     AnthropicLLMClient,
     LLMResponse,
     StubLLMClient,
 )
-from forte.services.usage import Usage
+from forte.services.agent._usage import Usage
 
 
 def test_stub_returns_queued_responses_in_order():

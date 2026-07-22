@@ -2,8 +2,8 @@
 
 This is the ONE place in the CLI where interactive prompting for proposed
 changes happens. It implements the `Reviewer` protocol
-(`forte.services.review.Reviewer`) so the pipeline itself never imports
-`click` -- see `forte/services/review.py` for the seam this fills.
+(`forte.services.agent.Reviewer`) so the pipeline itself never imports
+`click` -- see `forte/services/agent/_review.py` for the seam this fills.
 
 The existing Forte CLI is built entirely on `click` (`click.echo` /
 `click.confirm`); Rich is not a dependency of this project. To stay
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import click
 
-from forte.services.pipeline_models import (
+from forte.services.agent import (
     Decision,
     ProposedChange,
     ProposedFieldSet,

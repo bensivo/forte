@@ -17,13 +17,13 @@ from forte.db.mention_repository import MentionRepository
 from forte.db.schema_repository import SchemaRepository
 from forte.domain.schema import Schema
 from forte.services.agent import process_document
+from forte.services.agent._llm import LLMResponse, StubLLMClient
+from forte.services.agent._review import AutoApproveReviewer, ScriptedReviewer
+from forte.services.agent._structured import MAX_RETRIES, StructuredCallError
+from forte.services.agent._usage import Usage
 from forte.services.document import DocumentNotFoundError, ingest_document
 from forte.services.entity import add_entity
 from forte.services.init import init
-from forte.services.llm import LLMResponse, StubLLMClient
-from forte.services.review import AutoApproveReviewer, ScriptedReviewer
-from forte.services.structured import MAX_RETRIES, StructuredCallError
-from forte.services.usage import Usage
 
 
 def _vault(tmp_path: Path) -> Path:

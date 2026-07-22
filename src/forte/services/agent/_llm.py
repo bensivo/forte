@@ -4,7 +4,7 @@ The agent pipeline talks to the model through a narrow :class:`LLMClient`
 protocol whose single method, ``messages()``, is deliberately low-level: it
 takes a system prompt, a user prompt, and a JSON schema describing the required
 output, and returns the *raw* JSON text the model produced plus token
-:class:`~forte.services.usage.Usage`. It does **not** parse into domain
+:class:`~forte.services.agent._usage.Usage`. It does **not** parse into domain
 objects — that lives one layer up in the structured-call helper — so tests can
 stub this boundary and inject malformed or schema-violating JSON to exercise
 the parse/validate/retry path on real bytes.
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import anthropic
 
-from forte.services.usage import Usage
+from ._usage import Usage
 
 
 @dataclass(frozen=True)

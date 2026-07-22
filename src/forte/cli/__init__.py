@@ -8,9 +8,16 @@ from forte.cli.review_tui import InteractiveReviewer
 from forte.db.document_repository import DocumentRepository
 from forte.db.mention_repository import MentionRepository
 from forte.domain.document_markdown import from_markdown
-from forte.services.agent import ProcessResult, process_document
+from forte.services.agent import (
+    AnthropicLLMClient,
+    AutoApproveReviewer,
+    LLMClient,
+    ProcessResult,
+    StructuredCallError,
+    format_cost_summary,
+    process_document,
+)
 from forte.services.config import Config, ConfigError, load_config, require_api_key
-from forte.services.cost import format_cost_summary
 from forte.services.discovery import VaultNotFoundError, find_vault_root
 from forte.services.document import (
     DocumentError,
@@ -32,15 +39,12 @@ from forte.services.entity import (
 )
 from forte.services.init import VaultAlreadyExistsError
 from forte.services.init import init as init_vault
-from forte.services.llm import AnthropicLLMClient, LLMClient
-from forte.services.review import AutoApproveReviewer
 from forte.services.schema import (
     SchemaError,
     add_schema,
     list_schemas,
     remove_schema,
 )
-from forte.services.structured import StructuredCallError
 
 
 def _parse_key_value(token: str) -> tuple[str, str]:
@@ -230,7 +234,7 @@ def entity_show(id: int) -> None:
         for m in mentions:
             mentioned_doc = DocumentRepository(root).get(m.doc_id)
             doc_name = mentioned_doc.name if mentioned_doc else "(unknown)"
-            click.echo(f"  doc #{m.doc_id}: {doc_name}")
+            click.echo(f"  doc #{m.doc_id}:() {doc_name}")
     else:
         click.echo("Mentions: (none)")
 
@@ -376,10 +380,12 @@ def doc_show(id: int) -> None:
         click.echo("Mentions:")
         for m in mentions:
             try:
-                entity_name = get_entity(root, m.entity_id).name
+                entity = get_entity(root, m.entity_id)
+                entity_name = entity.name
+                entity_schema = entity.schema
             except EntityError:
                 entity_name = "(unknown)"
-            click.echo(f"  entity #{m.entity_id}: {entity_name}")
+            click.echo(f"  #{m.entity_id} [{entity_schema}] {entity_name}")
     else:
         click.echo("Mentions: (none)")
 

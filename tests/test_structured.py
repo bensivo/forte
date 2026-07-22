@@ -6,13 +6,13 @@ import json
 
 import pytest
 
-from forte.services.llm import LLMResponse, StubLLMClient
-from forte.services.structured import (
+from forte.services.agent._llm import LLMResponse, StubLLMClient
+from forte.services.agent._structured import (
     MAX_RETRIES,
     StructuredCallError,
     structured_call,
 )
-from forte.services.usage import Usage
+from forte.services.agent._usage import Usage
 
 
 def _parse_color(text: str) -> str:

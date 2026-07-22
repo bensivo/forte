@@ -7,8 +7,8 @@ import json
 import pytest
 
 from forte.domain.entity import Entity
-from forte.services.pipeline_models import CandidateEntity
-from forte.services.prompts import (
+from forte.services.agent._pipeline_models import CandidateEntity
+from forte.services.agent._prompts import (
     EXTRACTION_SCHEMA,
     LINK_SCHEMA,
     build_extraction_user,

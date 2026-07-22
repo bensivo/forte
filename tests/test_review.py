@@ -1,7 +1,7 @@
 """Tests for the reviewer seam (src/forte/services/review.py)."""
 
-from forte.services.pipeline_models import ProposedLink, ProposedNewEntity
-from forte.services.review import AutoApproveReviewer, ScriptedReviewer
+from forte.services.agent._pipeline_models import ProposedLink, ProposedNewEntity
+from forte.services.agent._review import AutoApproveReviewer, ScriptedReviewer
 
 
 def _changes():

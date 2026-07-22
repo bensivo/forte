@@ -11,7 +11,7 @@ for cost estimation purposes. This provides a simpler, more conservative estimat
 
 from __future__ import annotations
 
-from forte.services.usage import Usage
+from ._usage import Usage
 
 # Per-1-MILLION-token pricing in USD: (input_price, output_price)
 # Update this table as models and prices change.

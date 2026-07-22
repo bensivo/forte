@@ -1,6 +1,6 @@
 """Best-effort committer for the agent pipeline's approved proposed changes.
 
-Writes approved :class:`~forte.services.pipeline_models.ProposedChange`
+Writes approved :class:`~forte.services.agent._pipeline_models.ProposedChange`
 objects through the EXISTING service layer (``entity.py`` / ``document.py``)
 so the markdown + SQLite dual-write invariant holds — this module never
 touches markdown or SQLite directly.
@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from forte.services import document, entity
-from forte.services.pipeline_models import (
+
+from ._pipeline_models import (
     ProposedChange,
     ProposedFieldSet,
     ProposedLink,

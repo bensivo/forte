@@ -19,7 +19,7 @@ prompts live in source. When that lands, this module is the hook point: read the
 override (if any) from the vault config and fall back to these defaults.
 
 Division of responsibility between ``parse`` and the step functions
-(``forte.services.steps``):
+(``forte.services.agent._steps``):
   - ``parse`` validates SHAPE and hard-invalid values only, and RAISES on
     malformed / missing / wrong-typed JSON, or on an out-of-range link id — all
     of which are worth a retry.
@@ -33,7 +33,8 @@ from __future__ import annotations
 import json
 
 from forte.domain.entity import Entity
-from forte.services.pipeline_models import CandidateEntity
+
+from ._pipeline_models import CandidateEntity
 
 # ---------------------------------------------------------------------------
 # Step 1: extract entities

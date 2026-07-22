@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from forte.cli.review_tui import InteractiveReviewer
-from forte.services.pipeline_models import (
+from forte.services.agent._pipeline_models import (
     Decision,
     FieldSetTarget,
     ProposedFieldSet,

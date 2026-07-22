@@ -9,8 +9,8 @@ from click.testing import CliRunner
 
 import forte.cli as forte_cli
 from forte.cli import main
-from forte.services.llm import LLMResponse, StubLLMClient
-from forte.services.usage import Usage
+from forte.services.agent._llm import LLMResponse, StubLLMClient
+from forte.services.agent._usage import Usage
 
 
 def _init_vault(runner: CliRunner) -> None:

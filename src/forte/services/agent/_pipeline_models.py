@@ -18,7 +18,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 
-from forte.services.usage import Usage
+from ._usage import Usage
 
 
 @dataclass

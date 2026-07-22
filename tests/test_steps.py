@@ -7,16 +7,16 @@ import json
 import pytest
 
 from forte.domain.entity import Entity
-from forte.services.llm import LLMResponse, StubLLMClient
-from forte.services.pipeline_models import (
+from forte.services.agent._llm import LLMResponse, StubLLMClient
+from forte.services.agent._pipeline_models import (
     CandidateEntity,
     FieldSetTarget,
     ProposedLink,
     ProposedNewEntity,
 )
-from forte.services.steps import extract_entities, extract_fields, resolve_candidate
-from forte.services.structured import MAX_RETRIES, StructuredCallError
-from forte.services.usage import Usage
+from forte.services.agent._steps import extract_entities, extract_fields, resolve_candidate
+from forte.services.agent._structured import MAX_RETRIES, StructuredCallError
+from forte.services.agent._usage import Usage
 
 
 def _resp(payload: dict, usage: Usage | None = None) -> LLMResponse:

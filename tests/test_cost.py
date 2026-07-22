@@ -1,7 +1,7 @@
 """Tests for cost estimation module."""
 
-from forte.services.cost import PRICES, estimate_cost, format_cost_summary
-from forte.services.usage import Usage
+from forte.services.agent._cost import PRICES, estimate_cost, format_cost_summary
+from forte.services.agent._usage import Usage
 
 
 class TestEstimateCost:

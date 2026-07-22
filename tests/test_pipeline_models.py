@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from forte.services.pipeline_models import (
+from forte.services.agent._pipeline_models import (
     CandidateEntity,
     Decision,
     FieldSetTarget,
@@ -12,7 +12,7 @@ from forte.services.pipeline_models import (
     RunStage,
     RunState,
 )
-from forte.services.usage import Usage
+from forte.services.agent._usage import Usage
 
 
 def test_candidate_entity_construction() -> None:

@@ -14,12 +14,12 @@ interrupted, in-flight progress is lost with nothing committed (commit happens
 once, at the very end).
 
 Presentation decoupling: this module has NO Click and NO Rich imports. It takes
-an :class:`~forte.services.llm.LLMClient` and a
-:class:`~forte.services.review.Reviewer` (both injected) plus the vault root,
+an :class:`~forte.services.agent._llm.LLMClient` and a
+:class:`~forte.services.agent._review.Reviewer` (both injected) plus the vault root,
 and returns a plain :class:`ProcessResult` that the CLI renders.
 
 Failure semantics: if any pipeline step exhausts its retries it raises
-:class:`~forte.services.structured.StructuredCallError`, which propagates out of
+:class:`~forte.services.agent._structured.StructuredCallError`, which propagates out of
 ``process_document`` uncaught. Because commit is the last thing that runs,
 nothing has been written when a step fails — the run aborts with an empty vault
 delta.
@@ -27,8 +27,8 @@ delta.
 Ordering: approved entity proposals are presented and committed
 new-entities-first, then links. This is also how ``approved_changes`` is
 constructed (new entities, then links, then field-sets), which keeps each
-:class:`~forte.services.pipeline_models.FieldSetTarget.new_entity_ref` aligned
-with :func:`~forte.services.commit.commit_changes`' resolution scheme: commit
+:class:`~forte.services.agent._pipeline_models.FieldSetTarget.new_entity_ref` aligned
+with :func:`~forte.services.agent._commit.commit_changes`' resolution scheme: commit
 keys ``new_entity_ref`` by a new entity's position among the
 ``ProposedNewEntity`` items in the changes list, and we assign each
 ``new_entity_ref`` as that entity's index within the approved-new-entities list
@@ -42,19 +42,20 @@ from pathlib import Path
 
 from forte.db.entity_repository import EntityRepository
 from forte.domain.document_markdown import from_markdown
-from forte.services.commit import CommitReport, commit_changes
 from forte.services.document import get_document
-from forte.services.llm import LLMClient
-from forte.services.pipeline_models import (
+from forte.services.schema import list_schemas
+
+from ._commit import CommitReport, commit_changes
+from ._llm import LLMClient
+from ._pipeline_models import (
     FieldSetTarget,
     ProposedChange,
     ProposedLink,
     ProposedNewEntity,
 )
-from forte.services.review import Reviewer
-from forte.services.schema import list_schemas
-from forte.services.steps import extract_entities, extract_fields, resolve_candidate
-from forte.services.usage import Usage
+from ._review import Reviewer
+from ._steps import extract_entities, extract_fields, resolve_candidate
+from ._usage import Usage
 
 
 @dataclass
@@ -95,7 +96,7 @@ def process_document(
 
     See the module docstring for the full "option B" contract. Raises
     :class:`~forte.services.document.DocumentNotFoundError` if ``doc_id`` does
-    not exist, and lets :class:`~forte.services.structured.StructuredCallError`
+    not exist, and lets :class:`~forte.services.agent._structured.StructuredCallError`
     propagate (aborting the run with nothing committed) if any step exhausts its
     retries.
     """

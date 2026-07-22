@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Callable, TypeVar
 
-from forte.services.usage import Usage
+from ._usage import Usage
 
 T = TypeVar("T")
 

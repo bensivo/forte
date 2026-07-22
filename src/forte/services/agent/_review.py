@@ -4,7 +4,7 @@ The agent pipeline (extract -> review -> link/create -> review -> field-extract
 -> review -> commit) never talks to Click or Rich directly. Instead every
 review point in the pipeline hands a batch of :class:`~forte.services.
 pipeline_models.ProposedChange` objects to a :class:`Reviewer` and gets back
-one :class:`~forte.services.pipeline_models.Decision` per change, in order.
+one :class:`~forte.services.agent._pipeline_models.Decision` per change, in order.
 
 This module intentionally has NO Click and NO Rich imports. Presentation
 concerns -- showing one change at a time, rendering the supporting quote or
@@ -37,7 +37,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable, Sequence
 
-from forte.services.pipeline_models import Decision, ProposedChange
+from ._pipeline_models import Decision, ProposedChange
 
 
 class Reviewer(typing.Protocol):
