@@ -31,6 +31,7 @@ DEFAULT_CONFIG_CONTENT = (
     "  extraction: claude-haiku-4-5\n"
     "api_keys:\n"
     "  anthropic: ${ANTHROPIC_API_KEY}\n"
+    "# editor: vim\n"
 )
 
 _ENV_VAR_PATTERN = re.compile(r"^\$\{(?P<name>[^}]+)\}$")
@@ -50,6 +51,10 @@ class Config:
 
     extraction_model: str
     anthropic_api_key: str | None
+    # Top-level `editor:` key in config.yaml. Literal command name or path (no env-var
+    # interpolation); the precedence logic ($VISUAL → $EDITOR → this value → fallback)
+    # lives in the editor-session task, not here.
+    editor: str | None
 
 
 def write_default_config(path: Path) -> None:
@@ -84,8 +89,8 @@ def load_config(root: Path) -> Config:
     """Read ``.forte/config.yaml`` from the vault at ``root`` into a Config.
 
     Tolerates a missing file and missing keys by falling back to defaults:
-    ``extraction_model`` defaults to ``claude-haiku-4-5`` and
-    ``anthropic_api_key`` to ``None``. Does not raise
+    ``extraction_model`` defaults to ``claude-haiku-4-5``,
+    ``anthropic_api_key`` and ``editor`` to ``None``. Does not raise
     :class:`MissingAPIKeyError` — callers needing a key use
     :func:`require_api_key`.
     """
@@ -109,7 +114,16 @@ def load_config(root: Path) -> Config:
     if isinstance(api_keys_section, dict):
         anthropic_api_key = _resolve_api_key(api_keys_section.get("anthropic"))
 
-    return Config(extraction_model=extraction_model, anthropic_api_key=anthropic_api_key)
+    editor = None
+    value = data.get("editor")
+    if isinstance(value, str) and value:
+        editor = value
+
+    return Config(
+        extraction_model=extraction_model,
+        anthropic_api_key=anthropic_api_key,
+        editor=editor,
+    )
 
 
 def require_api_key(config: Config) -> str:

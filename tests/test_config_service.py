@@ -58,6 +58,7 @@ def test_missing_config_file_uses_defaults(tmp_path):
     config = load_config(tmp_path)
     assert config.extraction_model == "claude-haiku-4-5"
     assert config.anthropic_api_key is None
+    assert config.editor is None
 
 
 def test_default_written_config_round_trips(tmp_path, monkeypatch):
@@ -68,14 +69,44 @@ def test_default_written_config_round_trips(tmp_path, monkeypatch):
     config = load_config(tmp_path)
     assert config.extraction_model == "claude-haiku-4-5"
     assert config.anthropic_api_key == "sk-round-trip"
+    assert config.editor is None
 
 
 def test_require_api_key_raises_when_none():
-    config = Config(extraction_model="claude-haiku-4-5", anthropic_api_key=None)
+    config = Config(extraction_model="claude-haiku-4-5", anthropic_api_key=None, editor=None)
     with pytest.raises(MissingAPIKeyError):
         require_api_key(config)
 
 
 def test_require_api_key_returns_key_when_present():
-    config = Config(extraction_model="claude-haiku-4-5", anthropic_api_key="sk-123")
+    config = Config(extraction_model="claude-haiku-4-5", anthropic_api_key="sk-123", editor=None)
     assert require_api_key(config) == "sk-123"
+
+
+def test_editor_value_resolves(tmp_path):
+    _write_config(tmp_path, "editor: vim\n")
+    config = load_config(tmp_path)
+    assert config.editor == "vim"
+
+
+def test_editor_with_path_resolves(tmp_path):
+    _write_config(tmp_path, "editor: /usr/bin/nano\n")
+    config = load_config(tmp_path)
+    assert config.editor == "/usr/bin/nano"
+
+
+def test_editor_with_command_and_args_resolves(tmp_path):
+    _write_config(tmp_path, "editor: code --wait\n")
+    config = load_config(tmp_path)
+    assert config.editor == "code --wait"
+
+
+def test_editor_defaults_to_none_when_absent(tmp_path):
+    _write_config(tmp_path, "model:\n  extraction: claude-sonnet-4-5\n")
+    config = load_config(tmp_path)
+    assert config.editor is None
+
+
+def test_editor_missing_config_file_defaults_to_none(tmp_path):
+    config = load_config(tmp_path)
+    assert config.editor is None

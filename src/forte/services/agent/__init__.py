@@ -9,8 +9,9 @@ Outside code -- the CLI -- only ever imports from this top level.
 from __future__ import annotations
 
 from ._cost import format_cost_summary
+from ._editor import EditorAbortedError, EditorSession
 from ._llm import AnthropicLLMClient, LLMClient
-from ._orchestrator import ProcessResult, process_document
+from ._orchestrator import ProcessResult, process_document, process_document_bulk
 from ._pipeline_models import (
     Decision,
     ProposedChange,
@@ -25,6 +26,8 @@ __all__ = [
     "AnthropicLLMClient",
     "AutoApproveReviewer",
     "Decision",
+    "EditorAbortedError",
+    "EditorSession",
     "LLMClient",
     "ProcessResult",
     "ProposedChange",
@@ -35,4 +38,5 @@ __all__ = [
     "StructuredCallError",
     "format_cost_summary",
     "process_document",
+    "process_document_bulk",
 ]
