@@ -1,13 +1,14 @@
 """The editor-session seam: the bulk-commit flow's only text-editor surface.
 
-Bulk-commit mode (``--bulk-commit``) collapses the two sequential review
-points of the default pipeline into a single pass: it renders every proposed
-change (new entities, links, field updates) into one text document, hands
-that document to an :class:`EditorSession`, and parses whatever text comes
-back into decisions. The orchestrator never spawns a subprocess, writes a
-temp file, or knows anything about ``$VISUAL``/``$EDITOR``/config
-precedence -- it only ever depends on the `EditorSession` protocol defined
-here, exactly as it depends on `Reviewer` for the one-at-a-time flow.
+The bulk flow is the DEFAULT review flow (the one-at-a-time flow is opt-in
+via ``--interactive``/``-i``). It collapses the two sequential review points
+of the pipeline into a single pass: it renders every proposed change (new
+entities, links, field updates) into one text document, hands that document
+to an :class:`EditorSession`, and parses whatever text comes back into
+decisions. The orchestrator never spawns a subprocess, writes a temp file, or
+knows anything about ``$VISUAL``/``$EDITOR``/config precedence -- it only ever
+depends on the `EditorSession` protocol defined here, exactly as it depends on
+`Reviewer` for the one-at-a-time flow.
 
 This module intentionally has NO Click, NO Rich, NO subprocess, and NO
 tempfile imports. Those concerns belong entirely to the concrete terminal

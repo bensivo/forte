@@ -2,6 +2,8 @@
 
 Behavior spec for the `forte agent` command group — `forte agent process` and `forte agent ingest` — which run the LLM-driven pipeline that turns an ingested document into proposed entities, links, and field values, walks the user through reviewing each proposal, and commits the approved ones to the knowledge base. `agent process <doc-id>` runs the pipeline (extract entities → review → link/create entities → review → extract structured fields → review → commit) against a document that has already been ingested via `forte doc ingest`. `agent ingest <path>` is a convenience wrapper that runs `forte doc ingest` and then `forte agent process` in one command. All pipeline state (candidates, proposed changes, approve/reject decisions) is held **in memory** for the duration of the run; nothing is written to markdown or SQLite until the final commit step, and every scenario below runs against a **stubbed LLM boundary** — deterministic, scripted responses with zero cost — never a live model. These commands operate on an existing vault, discovered git-style by walking up from the current working directory to find a `.forte/` directory.
 
+**Review flow / flag precedence.** By **default** (no flags) the agent reviews all proposals in a single text-editor pass — the **bulk** flow, specified separately in [docs/spec/forte-agent-bulk-commit.md](./forte-agent-bulk-commit.md). The `--interactive`/`-i` flag selects the one-at-a-time `[y/n]` review that most scenarios in *this* file exercise (so those scenarios pass `-i` explicitly). `--yes` takes precedence over both — it auto-approves every proposal with no editor and no prompts. `--dry-run` composes with all three.
+
 ## Scenarios
 
 ### Scenario: Walk through proposed entities, links, and fields one at a time
@@ -13,7 +15,7 @@ And a document has been ingested with id 7, whose text mentions a new person "Ad
 And the LLM is stubbed to extract one candidate entity `Ada Lovelace` (schema `person`) with a supporting quote
 And the LLM is stubbed to propose no rule-matched link for that candidate, so it resolves to a new-entity proposal
 And the LLM is stubbed to extract field values `role=Mathematician` for the approved entity
-When the user runs `forte agent process 7` and approves each proposed change as it is presented
+When the user runs `forte agent process 7 -i` and approves each proposed change as it is presented
 Then the process presents the candidate entity proposal first, then the link/create proposal, then the field-set proposal, one at a time
 And the process exits with status code 0
 And a markdown file for `Ada Lovelace` exists under `entities/person/`
@@ -29,7 +31,7 @@ Given the current working directory is inside a Forte vault
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to extract one candidate entity `Ada Lovelace` (schema `person`) that resolves to a new-entity proposal
-When the user runs `forte agent process 7` and rejects the new-entity proposal
+When the user runs `forte agent process 7 -i` and rejects the new-entity proposal
 Then the process exits with status code 0
 And no markdown file for `Ada Lovelace` exists under `entities/person/`
 And no row for `Ada Lovelace` is present in the `entities` table
@@ -58,7 +60,7 @@ Given the current working directory is inside a Forte vault
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
-When the user runs `forte agent process 7 --dry-run` (with or without `--yes`)
+When the user runs `forte agent process 7 -i --dry-run` (or `--yes --dry-run`)
 Then the process proposes and (per the chosen presentation) may display each stage's changes
 And the commit step is skipped entirely
 And the process exits with status code 0
@@ -118,7 +120,7 @@ And a document has been ingested with id 7, whose text mentions "Ada"
 And the LLM is stubbed to extract a candidate named `Ada` (schema `person`)
 And the rule-based matcher finds entity id 3 via the alias match
 And the LLM is stubbed to pick entity id 3 as the link target, with a supporting quote
-When the user runs `forte agent process 7` and approves the proposed link
+When the user runs `forte agent process 7 -i` and approves the proposed link
 Then the process presents the proposal as a link to the existing entity `Ada Lovelace` (id 3), not a new entity
 And the process exits with status code 0
 And a new row linking document 7 and entity 3 is present in the `mentions` table
@@ -133,7 +135,7 @@ Given the current working directory is inside a Forte vault
 And no existing entity's name, alias, or normalized name matches "Grace Hopper"
 And a document has been ingested with id 7, whose text mentions "Grace Hopper"
 And the LLM is stubbed to extract a candidate named `Grace Hopper` (schema `person`)
-When the user runs `forte agent process 7` and approves the proposal
+When the user runs `forte agent process 7 -i` and approves the proposal
 Then the rule-based matcher returns no candidate entities, so no link-resolution LLM call is made for this candidate
 And the process presents the proposal as a new entity
 And the process exits with status code 0
@@ -188,7 +190,7 @@ And a markdown file for the new entity exists under `entities/`, with a `mention
 Given the current working directory is inside a Forte vault
 And a file `kickoff.md` exists on disk outside the vault
 And the LLM is stubbed to extract a candidate entity that resolves to a new-entity proposal
-When the user runs `forte agent ingest kickoff.md --dry-run`
+When the user runs `forte agent ingest kickoff.md -i --dry-run`
 Then the process exits with status code 0
 And a row for the document is present in the `documents` table (the mechanical ingest step is not part of the dry-run)
 And no row is added to the `entities` table

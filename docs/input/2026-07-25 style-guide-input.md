@@ -1,10 +1,9 @@
 # Style Guide Inputs
 Some random points for how I write and organize python code for maintainability. 
 
-
 - Use descriptive variable, function names that can be understood without adding teh cognitive load of the rest of the file
 - Use dependency injection for all external dependencies, either injected in the constructor for a class, or as a function param itself for more one-off functions that don't have an associated class
-- Organize most service-level functions into classes, to help conceptually organize them into a single object, and to help with sharing of injected dependencies.
+- Organize most functions into classes, to help conceptually organize them into a single object, and to help with sharing of injected dependencies.
 - Stateless, one-off functiosn can be defined top-level without a class, if it makes sense. That being said, a Utils class with static functions works just as well and still helps with code organization
 - Organize your codebase into 3 layers:
   - controller: the 'driver' layer of the app, where user interfaces are implemented, like REST controllers, CLI parsing, etc.. Handles receiving requests from the user, parsing the request from whatever format it came in, calling a service function, and then returning the response to the user. 
@@ -25,4 +24,24 @@ Some random points for how I write and organize python code for maintainability.
         - usersService
         - sqliteUsersDb
 
-- For small apps, you can just have 3 folders: `controller, service, adapter`, but for larger apps, you might break down code by domain modules, and have separate controllers, services, and adapters implemented per module. 
+    - For small apps, you can just have 3 folders: `controller, service, adapter`, but for larger apps, you might break down code by domain modules, and have separate controllers, services, and adapters implemented per module. 
+
+- All functions should have a docstring using the google format:
+  ```
+  def multiply(a, b):
+  """
+  This is an example of Google style.
+
+  Args:
+      param1: This is the first param.
+      param2: This is a second param.
+
+  Returns:
+      This is a description of what is returned.
+
+  Raises:
+      KeyError: Raises an exception.
+  """
+  ```
+    - The 'Raises' part is optional, only if it explicitly raises somthing
+

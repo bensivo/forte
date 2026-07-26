@@ -208,9 +208,10 @@ def test_parse_reordering_lines_preserves_mapping():
     # Find and reorder the three proposal lines (c0, c1, c2) within the doc,
     # simulating a user cutting/pasting lines around.
     proposal_lines = [
-        line for line in lines if any(f" c{i}" in line and line.strip().startswith("[") for i in range(3))
+        line
+        for line in lines
+        if any(f" c{i}" in line and line.strip().startswith("[") for i in range(3))
     ]
-    other_lines = [line for line in lines if line not in proposal_lines]
     shuffled = list(reversed(proposal_lines))
     # Reinsert shuffled proposal lines where the originals were, in order encountered.
     result_lines = []

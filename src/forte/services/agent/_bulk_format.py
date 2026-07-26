@@ -1,7 +1,8 @@
 """The bulk-commit editor document format: render proposals, parse decisions.
 
-``--bulk-commit`` replaces the one-at-a-time :class:`~forte.services.agent.
-_review.Reviewer` prompt with a single git-style editor session: every
+The bulk flow (the DEFAULT review flow; the one-at-a-time
+:class:`~forte.services.agent._review.Reviewer` prompt is opt-in via
+``--interactive``/``-i``) uses a single git-style editor session: every
 proposed change (new entities, links, field updates) is rendered into one
 text document, handed to an editor, and the edited text is parsed back into
 one :class:`~forte.services.agent._pipeline_models.Decision` per proposal.

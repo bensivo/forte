@@ -193,7 +193,8 @@ def test_ingest_ingests_and_processes_in_one_command(monkeypatch) -> None:
         assert "Mentions:" in shown.output
 
 
-def test_process_bulk_commit_happy_path_commits_proposals(monkeypatch) -> None:
+def test_process_default_is_bulk_editor(monkeypatch) -> None:
+    """With no flag, `agent process` uses the bulk editor by default."""
     stub = _stub_new_entity_with_field()
     monkeypatch.setattr(forte_cli, "_build_llm_client", lambda config: stub)
     editor = ScriptedEditor(_unchanged)
@@ -211,7 +212,7 @@ def test_process_bulk_commit_happy_path_commits_proposals(monkeypatch) -> None:
         ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
         assert ingest.exit_code == 0, ingest.output
 
-        result = runner.invoke(main, ["agent", "process", "1", "--bulk-commit"])
+        result = runner.invoke(main, ["agent", "process", "1"])
         assert result.exit_code == 0, result.output
         assert editor.calls == 1
         assert "## New entities" in editor.received
@@ -221,8 +222,8 @@ def test_process_bulk_commit_happy_path_commits_proposals(monkeypatch) -> None:
         assert "Ada Lovelace" in listed.output
 
 
-def test_process_bulk_commit_with_yes_never_opens_editor(monkeypatch) -> None:
-    """--yes wins over --bulk-commit: no editor is invoked, everything is auto-approved."""
+def test_process_interactive_flag_prompts_one_at_a_time(monkeypatch) -> None:
+    """`-i` selects the one-at-a-time [y/n] review; the editor is never opened."""
     stub = _stub_new_entity_with_field()
     monkeypatch.setattr(forte_cli, "_build_llm_client", lambda config: stub)
     editor = ScriptedEditor(_unchanged)
@@ -240,7 +241,39 @@ def test_process_bulk_commit_with_yes_never_opens_editor(monkeypatch) -> None:
         ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
         assert ingest.exit_code == 0, ingest.output
 
-        result = runner.invoke(main, ["agent", "process", "1", "--yes", "--bulk-commit"])
+        # Two prompts (entity proposal, then its field-set); approve both.
+        result = runner.invoke(main, ["agent", "process", "1", "-i"], input="y\ny\n")
+        assert result.exit_code == 0, result.output
+        assert editor.calls == 0  # interactive path never opens the editor
+        assert "Approve?" in result.output
+
+        listed = runner.invoke(main, ["entity", "list"])
+        assert listed.exit_code == 0, listed.output
+        assert "Ada Lovelace" in listed.output
+
+
+def test_process_yes_wins_over_interactive_and_never_opens_editor(monkeypatch) -> None:
+    """--yes takes precedence over both the default bulk editor and --interactive:
+    no editor, no prompts, everything auto-approved."""
+    stub = _stub_new_entity_with_field()
+    monkeypatch.setattr(forte_cli, "_build_llm_client", lambda config: stub)
+    editor = ScriptedEditor(_unchanged)
+    monkeypatch.setattr(forte_cli, "_build_editor_session", lambda config: editor)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        _init_vault(runner)
+        schema_result = runner.invoke(
+            main, ["schema", "add", "person", "--field", "employer", "--field", "role"]
+        )
+        assert schema_result.exit_code == 0, schema_result.output
+
+        Path("note.md").write_text("Ada Lovelace wrote the first algorithm.\n")
+        ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
+        assert ingest.exit_code == 0, ingest.output
+
+        # --yes alongside -i: --yes wins, no editor and no prompt input needed.
+        result = runner.invoke(main, ["agent", "process", "1", "--yes", "-i"])
         assert result.exit_code == 0, result.output
         assert editor.calls == 0
 
@@ -249,7 +282,7 @@ def test_process_bulk_commit_with_yes_never_opens_editor(monkeypatch) -> None:
         assert "Ada Lovelace" in listed.output
 
 
-def test_process_bulk_commit_dry_run_writes_nothing(monkeypatch) -> None:
+def test_process_default_bulk_dry_run_writes_nothing(monkeypatch) -> None:
     stub = _stub_new_entity_with_field()
     monkeypatch.setattr(forte_cli, "_build_llm_client", lambda config: stub)
     editor = ScriptedEditor(_unchanged)
@@ -267,7 +300,7 @@ def test_process_bulk_commit_dry_run_writes_nothing(monkeypatch) -> None:
         ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
         assert ingest.exit_code == 0, ingest.output
 
-        result = runner.invoke(main, ["agent", "process", "1", "--bulk-commit", "--dry-run"])
+        result = runner.invoke(main, ["agent", "process", "1", "--dry-run"])
         assert result.exit_code == 0, result.output
         assert editor.calls == 1  # editor still opens to collect decisions
         assert "Dry run" in result.output
@@ -277,7 +310,7 @@ def test_process_bulk_commit_dry_run_writes_nothing(monkeypatch) -> None:
         assert "No entities yet." in listed.output
 
 
-def test_process_bulk_commit_editor_abort_exits_nonzero_and_commits_nothing(monkeypatch) -> None:
+def test_process_default_bulk_editor_abort_exits_nonzero_and_commits_nothing(monkeypatch) -> None:
     stub = _stub_new_entity_with_field()
     monkeypatch.setattr(forte_cli, "_build_llm_client", lambda config: stub)
     editor = ScriptedEditor(_abort_edit)
@@ -295,7 +328,7 @@ def test_process_bulk_commit_editor_abort_exits_nonzero_and_commits_nothing(monk
         ingest = runner.invoke(main, ["doc", "ingest", "note.md"])
         assert ingest.exit_code == 0, ingest.output
 
-        result = runner.invoke(main, ["agent", "process", "1", "--bulk-commit"])
+        result = runner.invoke(main, ["agent", "process", "1"])
         assert result.exit_code != 0
         assert "nothing was committed" in result.output.lower()
 
@@ -304,7 +337,7 @@ def test_process_bulk_commit_editor_abort_exits_nonzero_and_commits_nothing(monk
         assert "No entities yet." in listed.output
 
 
-def test_ingest_bulk_commit_end_to_end(monkeypatch) -> None:
+def test_ingest_default_bulk_end_to_end(monkeypatch) -> None:
     stub = _stub_new_entity_with_field()
     monkeypatch.setattr(forte_cli, "_build_llm_client", lambda config: stub)
     editor = ScriptedEditor(_unchanged)
@@ -320,7 +353,7 @@ def test_ingest_bulk_commit_end_to_end(monkeypatch) -> None:
 
         Path("kickoff.md").write_text("Ada Lovelace wrote the first algorithm.\n")
 
-        result = runner.invoke(main, ["agent", "ingest", "kickoff.md", "--bulk-commit"])
+        result = runner.invoke(main, ["agent", "ingest", "kickoff.md"])
         assert result.exit_code == 0, result.output
         assert "Ingested doc #1" in result.output
         assert editor.calls == 1

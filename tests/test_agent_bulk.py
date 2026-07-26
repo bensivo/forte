@@ -24,7 +24,6 @@ from forte.services.document import ingest_document
 from forte.services.entity import add_entity
 from forte.services.init import init
 
-
 # ---------------------------------------------------------------------------
 # fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -342,8 +341,12 @@ def test_usage_accumulates_across_all_field_extractions(tmp_path: Path) -> None:
     )
     stub = StubLLMClient(
         [
-            _extract("Ada Lovelace", "Charles Babbage", usage=Usage(input_tokens=10, output_tokens=5)),
-            _resp({"role": "Mathematician", "employer": ""}, Usage(input_tokens=7, output_tokens=3)),
+            _extract(
+                "Ada Lovelace", "Charles Babbage", usage=Usage(input_tokens=10, output_tokens=5)
+            ),
+            _resp(
+                {"role": "Mathematician", "employer": ""}, Usage(input_tokens=7, output_tokens=3)
+            ),
             _resp({"role": "Engineer", "employer": ""}, Usage(input_tokens=6, output_tokens=2)),
         ]
     )

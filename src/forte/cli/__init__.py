@@ -476,30 +476,28 @@ def _build_editor_session(config: Config) -> EditorSession:
     the whole test suite stays deterministic and never spawns a real editor.
     Production code always gets a real
     :class:`~forte.cli.bulk_editor.TerminalEditorSession` here.
-
-    Not yet wired into any command -- `--bulk-commit` routing is a later
-    task.
     """
     return TerminalEditorSession(config)
 
 
 def _run_agent_process(
-    root: Path, doc_id: int, *, yes: bool, dry_run: bool, bulk_commit: bool = False
+    root: Path, doc_id: int, *, yes: bool, dry_run: bool, interactive: bool = False
 ) -> None:
     """Shared process-and-render logic for `agent process` and `agent ingest`.
 
     Routing precedence -- kept in this ONE place so both commands behave
     identically:
 
-      - ``yes`` -> the existing auto-approve path (``process_document`` with
-        ``AutoApproveReviewer``). ``bulk_commit`` is ignored entirely: no
-        editor is ever opened, and everything is auto-approved. This is the
-        "--yes wins" rule documented on both flags' ``--help`` text.
-      - ``bulk_commit`` (without ``yes``) -> the single-editor-pass bulk flow
-        (``process_document_bulk``), using the injected ``EditorSession`` from
-        ``_build_editor_session``. ``dry_run`` composes normally: the editor
-        still opens and collects decisions, but nothing is committed.
-      - neither -> today's interactive one-at-a-time review flow, unchanged.
+      - ``yes`` -> the auto-approve path (``process_document`` with
+        ``AutoApproveReviewer``): no prompts, no editor, everything approved.
+        ``yes`` wins over ``interactive`` (documented on both flags' ``--help``).
+      - ``interactive`` (without ``yes``) -> the one-at-a-time review flow
+        (``process_document`` with ``InteractiveReviewer``), prompting per
+        proposal.
+      - neither -> the DEFAULT bulk flow: review every proposal in a single
+        text-editor pass (``process_document_bulk``), using the injected
+        ``EditorSession`` from ``_build_editor_session``. ``dry_run`` composes
+        with all three: nothing is committed, but proposals are still gathered.
     """
     try:
         config = load_config(root)
@@ -512,14 +510,14 @@ def _run_agent_process(
             result = process_document(
                 root, doc_id, llm=llm, reviewer=AutoApproveReviewer(), dry_run=dry_run
             )
-        elif bulk_commit:
+        elif interactive:
+            result = process_document(
+                root, doc_id, llm=llm, reviewer=InteractiveReviewer(), dry_run=dry_run
+            )
+        else:
             editor = _build_editor_session(config)
             result = process_document_bulk(
                 root, doc_id, llm=llm, editor=editor, dry_run=dry_run
-            )
-        else:
-            result = process_document(
-                root, doc_id, llm=llm, reviewer=InteractiveReviewer(), dry_run=dry_run
             )
     except (DocumentNotFoundError, DocumentError) as e:
         raise click.ClickException(str(e))
@@ -560,37 +558,35 @@ def agent() -> None:
     """Run the LLM agent pipeline over documents."""
 
 
-_BULK_COMMIT_HELP = (
-    "Review all proposals (new entities, links, and field updates) in a "
-    "single text-editor pass instead of one at a time. Ignored if --yes is "
-    "also given -- --yes takes precedence, auto-approving everything with no "
-    "editor opened. Composes with --dry-run: the editor still opens and "
-    "collects decisions, but nothing is committed."
+_INTERACTIVE_HELP = (
+    "Review proposals one at a time with a [y/n] prompt for each, instead of "
+    "the default single text-editor pass. Ignored if --yes is also given -- "
+    "--yes takes precedence, auto-approving everything with no prompts."
 )
-_YES_HELP = "Auto-approve all proposed changes. Takes precedence over --bulk-commit."
+_YES_HELP = "Auto-approve all proposed changes. Takes precedence over --interactive."
 
 
 @agent.command("process")
 @click.argument("doc_id", type=int)
 @click.option("--yes", "-y", is_flag=True, help=_YES_HELP)
 @click.option("--dry-run", is_flag=True, help="Propose changes but write nothing.")
-@click.option("--bulk-commit", is_flag=True, help=_BULK_COMMIT_HELP)
-def agent_process(doc_id: int, yes: bool, dry_run: bool, bulk_commit: bool) -> None:
+@click.option("--interactive", "-i", is_flag=True, help=_INTERACTIVE_HELP)
+def agent_process(doc_id: int, yes: bool, dry_run: bool, interactive: bool) -> None:
     """Run the extract/link/field-extract pipeline against document DOC_ID."""
     try:
         root = find_vault_root(Path.cwd())
     except VaultNotFoundError as e:
         raise click.ClickException(str(e))
 
-    _run_agent_process(root, doc_id, yes=yes, dry_run=dry_run, bulk_commit=bulk_commit)
+    _run_agent_process(root, doc_id, yes=yes, dry_run=dry_run, interactive=interactive)
 
 
 @agent.command("ingest")
 @click.argument("path", type=click.Path(exists=False))
 @click.option("--yes", "-y", is_flag=True, help=_YES_HELP)
 @click.option("--dry-run", is_flag=True, help="Propose changes but write nothing.")
-@click.option("--bulk-commit", is_flag=True, help=_BULK_COMMIT_HELP)
-def agent_ingest(path: str, yes: bool, dry_run: bool, bulk_commit: bool) -> None:
+@click.option("--interactive", "-i", is_flag=True, help=_INTERACTIVE_HELP)
+def agent_ingest(path: str, yes: bool, dry_run: bool, interactive: bool) -> None:
     """Ingest the file at PATH, then run the agent pipeline against it."""
     try:
         root = find_vault_root(Path.cwd())
@@ -604,4 +600,4 @@ def agent_ingest(path: str, yes: bool, dry_run: bool, bulk_commit: bool) -> None
 
     click.echo(f"Ingested doc #{document.id}: {document.name}")
 
-    _run_agent_process(root, document.id, yes=yes, dry_run=dry_run, bulk_commit=bulk_commit)
+    _run_agent_process(root, document.id, yes=yes, dry_run=dry_run, interactive=interactive)
