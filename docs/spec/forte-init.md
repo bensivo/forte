@@ -16,6 +16,7 @@ And the process creates `.forte/index.db` as a SQLite database
 And the SQLite database contains the tables `documents`, `schemas`, `entities`, `entity_field_values`, `mentions`, and `ingest_changes`
 And the process creates the `docs/raw/` directory
 And the process creates the `docs/processed/` directory
+And the process creates the `docs/staging/` directory
 And the process creates the `entities/` directory
 And the process prints a success message including the absolute vault path
 And the process exits with status code 0

@@ -41,6 +41,10 @@ class VaultLayout:
         return self.docs_dir / "processed"
 
     @property
+    def docs_staging_dir(self) -> Path:
+        return self.docs_dir / "staging"
+
+    @property
     def entities_dir(self) -> Path:
         return self.root / "entities"
 
@@ -55,5 +59,6 @@ class VaultLayout:
             self.docs_dir,
             self.docs_raw_dir,
             self.docs_processed_dir,
+            self.docs_staging_dir,
             self.entities_dir,
         ]

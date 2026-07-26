@@ -38,6 +38,7 @@ def test_init_in_empty_dir_creates_full_layout() -> None:
         assert (root / ".forte" / "config.yaml").stat().st_size > 0
         assert (root / "docs" / "raw").is_dir()
         assert (root / "docs" / "processed").is_dir()
+        assert (root / "docs" / "staging").is_dir()
         assert (root / "entities").is_dir()
 
         db_path = root / ".forte" / "index.db"

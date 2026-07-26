@@ -36,6 +36,11 @@ def test_docs_processed_dir_composition() -> None:
     assert layout.docs_processed_dir == Path("/some/vault/docs/processed")
 
 
+def test_docs_staging_dir_composition() -> None:
+    layout = VaultLayout(root=Path("/some/vault"))
+    assert layout.docs_staging_dir == Path("/some/vault/docs/staging")
+
+
 def test_entities_dir_composition() -> None:
     layout = VaultLayout(root=Path("/some/vault"))
     assert layout.entities_dir == Path("/some/vault/entities")
@@ -57,6 +62,7 @@ def test_all_dirs_contents() -> None:
         layout.root / "docs",
         layout.docs_raw_dir,
         layout.docs_processed_dir,
+        layout.docs_staging_dir,
         layout.entities_dir,
     }
 
@@ -99,6 +105,7 @@ def test_no_io_for_nonexistent_root(tmp_path: Path) -> None:
     _ = layout.db_path
     _ = layout.docs_raw_dir
     _ = layout.docs_processed_dir
+    _ = layout.docs_staging_dir
     _ = layout.entities_dir
     _ = layout.all_dirs()
 
