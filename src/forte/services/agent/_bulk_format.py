@@ -50,10 +50,20 @@ Action-token rules (consumed by :func:`parse`)
   comment block, ``## Section`` lines, blank lines, and the indented ``#
   alias/field/quote`` detail lines under a proposal) are ignored entirely --
   they carry no change-id and never enter the decision map.
+
+Renaming new entities
+---------------------
+A :class:`ProposedNewEntity` has not been created yet, so its name is
+editable: whatever text the user leaves after ``entity:`` on that proposal's
+line becomes the name. :func:`parse` detects this and returns a
+``dataclasses.replace``-d copy of the proposal carrying the new name (the
+original is left untouched). This applies ONLY to new entities -- link and
+field-set lines are display-only, and their names are never read back.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import re
 
 from ._pipeline_models import (
@@ -74,11 +84,16 @@ _HEADER = """\
 # A line whose action is anything other than [y] (blank, garbled, [x], ...)
 # is also treated as rejected -- only an exact [y] commits a change.
 #
-# You can only accept or skip the changes proposed below. You cannot add a
-# brand-new record by typing a line, and you cannot convert a "link to
-# existing entity" into a "new entity" (or vice versa) by editing this file.
-# Field values shown here are informational and cannot be edited inline --
-# use `forte entity edit` after committing to make corrections.
+# You may RENAME a proposed NEW entity by editing the text after "entity:"
+# on its line -- it has not been created yet, so it will be created under
+# whatever name you leave there. Renaming applies only to new entities, not
+# to links to existing entities.
+#
+# Apart from that, you can only accept or skip the changes proposed below.
+# You cannot add a brand-new record by typing a line, and you cannot convert
+# a "link to existing entity" into a "new entity" (or vice versa) by editing
+# this file. Field values shown here are informational and cannot be edited
+# inline -- use `forte entity edit` after committing to make corrections.
 #
 # When you are done, save and close the editor to commit every [y] change.
 ###############
@@ -91,6 +106,12 @@ _NONE_PLACEHOLDER = "# (none proposed)"
 # brackets). Everything after the change-id (the human-readable description)
 # is irrelevant to parsing.
 _LINE_RE = re.compile(r"^\s*\[(?P<action>[^\]]*)\]\s+(?P<change_id>\S+)")
+
+# Captures the (possibly hand-edited) name on a new-entity line: everything
+# after the first "entity:" marker through end of line. Because the rendered
+# prose ("New <schema> entity: ") always puts an "entity:" before the name,
+# the first match lands on that marker even if the name itself contains one.
+_NEW_ENTITY_NAME_RE = re.compile(r"entity:\s*(?P<name>.*?)\s*$")
 
 
 def _change_id(index: int) -> str:
@@ -176,6 +197,7 @@ def parse(edited: str, changes: list[ProposedChange]) -> list[Decision]:
     action-token rules.
     """
     approved_by_id: dict[str, bool] = {}
+    line_by_id: dict[str, str] = {}
     for line in edited.splitlines():
         match = _LINE_RE.match(line)
         if not match:
@@ -183,10 +205,31 @@ def parse(edited: str, changes: list[ProposedChange]) -> list[Decision]:
         action = match.group("action").strip().lower()
         change_id = match.group("change_id")
         approved_by_id[change_id] = action == "y"
+        line_by_id[change_id] = line
 
     decisions: list[Decision] = []
     for index, change in enumerate(changes):
         change_id = _change_id(index)
         approved = approved_by_id.get(change_id, False)
-        decisions.append(Decision(change=change, approved=approved))
+        result_change = _apply_rename(change, line_by_id.get(change_id))
+        decisions.append(Decision(change=result_change, approved=approved))
     return decisions
+
+
+def _apply_rename(change: ProposedChange, line: str | None) -> ProposedChange:
+    """Return ``change``, or a renamed copy if it's a new entity with an edited name.
+
+    Only :class:`ProposedNewEntity` is renamable (it isn't created yet). The
+    new name is read from the text after ``entity:`` on the proposal's line;
+    an empty name or a line whose ``entity:`` marker was deleted leaves the
+    original name unchanged. Link and field-set changes are returned as-is.
+    """
+    if line is None or not isinstance(change, ProposedNewEntity):
+        return change
+    match = _NEW_ENTITY_NAME_RE.search(line)
+    if match is None:
+        return change
+    new_name = match.group("name").strip()
+    if not new_name or new_name == change.name:
+        return change
+    return dataclasses.replace(change, name=new_name)

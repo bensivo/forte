@@ -124,6 +124,26 @@ def delete_lines(*change_ids: str):
     return _transform
 
 
+def rename(old_name: str, new_name: str):
+    """Transform: edit a new-entity line's name from ``old_name`` to ``new_name``."""
+
+    def _transform(text: str) -> str:
+        return text.replace(f"entity: {old_name}", f"entity: {new_name}")
+
+    return _transform
+
+
+def combine(*transforms):
+    """Chain several transforms left-to-right."""
+
+    def _transform(text: str) -> str:
+        for t in transforms:
+            text = t(text)
+        return text
+
+    return _transform
+
+
 # ---------------------------------------------------------------------------
 # tests
 # ---------------------------------------------------------------------------
@@ -357,6 +377,60 @@ def test_editor_abort_propagates_and_commits_nothing(tmp_path: Path) -> None:
 
     assert EntityRepository(root).list() == []
     assert MentionRepository(root).list_for_doc(doc.id) == []
+
+
+def test_rename_new_entity_commits_under_new_name(tmp_path: Path) -> None:
+    """Editing a proposed new entity's name creates it under the new name, and
+    its field-set still lands on it (new_entity_ref unaffected by the rename)."""
+    root, doc = _vault_with_doc(
+        tmp_path, fields=["role", "employer"], text="Ada wrote the first algorithm."
+    )
+    stub = StubLLMClient(
+        [
+            _extract("Ada"),  # LLM proposes the terse "Ada"
+            _resp({"role": "Mathematician", "employer": ""}),
+        ]
+    )
+    # User expands the name to the canonical form in the editor.
+    editor = ScriptedEditor(rename("Ada", "Ada Lovelace"))
+
+    result = process_document_bulk(root, doc.id, llm=stub, editor=editor, dry_run=False)
+
+    assert result.commit_report is not None
+    assert len(result.commit_report.failures) == 0
+
+    entities = EntityRepository(root).list(schema="person")
+    names = {e.name for e in entities}
+    assert names == {"Ada Lovelace"}  # created under the edited name, not "Ada"
+    ada = entities[0]
+    assert ada.fields["role"] == "Mathematician"  # field-set followed the rename
+    assert len(MentionRepository(root).list_for_entity(ada.id)) == 1
+
+
+def test_rename_survives_promotion(tmp_path: Path) -> None:
+    """A renamed new entity that is rejected but promoted (its field-set kept)
+    is created under the EDITED name."""
+    root, doc = _vault_with_doc(
+        tmp_path, fields=["role", "employer"], text="Ada wrote the first algorithm."
+    )
+    stub = StubLLMClient(
+        [
+            _extract("Ada"),
+            _resp({"role": "Mathematician", "employer": ""}),
+        ]
+    )
+    # all_changes: [Ada c0, fieldAda c1]. Rename AND reject the entity line,
+    # but keep its field-set -> promotion recreates it under the new name.
+    editor = ScriptedEditor(combine(rename("Ada", "Ada Lovelace"), flip_to_no("c0")))
+
+    result = process_document_bulk(root, doc.id, llm=stub, editor=editor, dry_run=False)
+
+    assert result.commit_report is not None
+    assert len(result.commit_report.failures) == 0
+
+    entities = EntityRepository(root).list(schema="person")
+    assert {e.name for e in entities} == {"Ada Lovelace"}
+    assert entities[0].fields["role"] == "Mathematician"
 
 
 def test_zero_proposals_does_not_open_editor(tmp_path: Path) -> None:

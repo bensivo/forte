@@ -238,6 +238,12 @@ def process_document_bulk(
       4. build the approved set (see the promotion note below) and commit,
          honoring ``dry_run`` exactly like ``process_document``.
 
+    Renaming: because a proposed new entity is not created until commit, the
+    user may edit its name in the editor. ``parse`` returns the renamed
+    proposal on the corresponding Decision, so the approved set is built from
+    the parsed decisions (not the pre-edit proposals) to carry the new name
+    through to commit — including for an entity pulled back in by promotion.
+
     ``new_entity_ref`` alignment / the promotion edge case
     ------------------------------------------------------
     Field-sets on NEW entities carry a ``new_entity_ref`` that indexes into the
@@ -341,15 +347,30 @@ def process_document_bulk(
 
     edited = editor.edit(render_bulk(all_changes))  # EditorAbortedError propagates
     decisions = parse_bulk(edited, all_changes)
-    approved = {id(d.change) for d in decisions if d.approved}
+
+    # parse returns one Decision per entry in all_changes, in the SAME order,
+    # so we split it back positionally into the new/link/field groups. We must
+    # read the (possibly renamed) proposal off each Decision's `change`, not off
+    # the original `all_new`/`all_links`/`all_fields` objects: the user can
+    # RENAME a new entity in the editor, in which case parse hands back a
+    # replaced ProposedNewEntity carrying the new name.
+    n_new = len(all_new)
+    n_links = len(all_links)
+    new_decisions = decisions[:n_new]
+    link_decisions = decisions[n_new : n_new + n_links]
+    field_decisions = decisions[n_new + n_links :]
+
+    # parsed_new[i] is the reviewed form of all_new[i] (renamed if edited),
+    # indexed identically so new_entity_ref values still address the right one.
+    parsed_new = [d.change for d in new_decisions]
 
     # 5. Build the approved set, resolving the promotion edge case. First,
-    #    which original new-entity indices are approved outright.
+    #    which new-entity indices are approved outright.
     approved_new_indices: set[int] = {
-        index for index, new_entity in enumerate(all_new) if id(new_entity) in approved
+        index for index, d in enumerate(new_decisions) if d.approved
     }
-    approved_links = [link for link in all_links if id(link) in approved]
-    approved_fields = [fs for fs in all_fields if id(fs) in approved]
+    approved_links = [d.change for d in link_decisions if d.approved]
+    approved_fields = [d.change for d in field_decisions if d.approved]
 
     # PROMOTE: any approved field-set targeting a rejected new entity forces
     # that entity back into the approved set so its values have somewhere to go.
@@ -361,7 +382,7 @@ def process_document_bulk(
     # Freeze the final new-entity ordering (original order preserved) and build
     # the old-index -> new-position remap for new_entity_ref realignment.
     final_new_indices = sorted(approved_new_indices)
-    approved_new = [all_new[index] for index in final_new_indices]
+    approved_new = [parsed_new[index] for index in final_new_indices]
     remap = {old: new for new, old in enumerate(final_new_indices)}
 
     # Realign each new-entity-targeted field-set's new_entity_ref to its

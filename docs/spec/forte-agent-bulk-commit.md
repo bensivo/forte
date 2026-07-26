@@ -91,6 +91,36 @@ And a row linking document 7 to the "Grace Hopper" entity is present in the `men
 And running `forte entity show` for the new entity afterward shows `role` set to "Rear Admiral"
 ```
 
+### Scenario: Renaming a proposed new entity creates it under the edited name
+
+```gherkin
+Given the current working directory is inside a Forte vault
+And a `person` schema exists with field `role`
+And a document has been ingested with id 7
+And the LLM is stubbed to extract one candidate that resolves to a new-entity proposal for `person` "Ada" (no rule-based link match), plus a field update proposing `role=Mathematician` targeting that same new entity
+When the user runs `forte agent process 7 --bulk-commit`
+And the stubbed editor edits the new-entity line's name from "Ada" to "Ada Lovelace" and leaves every action as `[y]`
+Then the process exits with status code 0
+And a markdown file for "Ada Lovelace" is created under `entities/person/`
+And a row for "Ada Lovelace" (not "Ada") is present in the `entities` table
+And running `forte entity show` for the new entity afterward shows `role` set to "Mathematician" (the field update followed the renamed entity)
+And no entity named "Ada" is created
+```
+
+### Scenario: A renamed new entity that is skipped but promoted is created under the edited name
+
+```gherkin
+Given the current working directory is inside a Forte vault
+And a `person` schema exists with field `role`
+And a document has been ingested with id 7
+And the LLM is stubbed to extract one candidate that resolves to a new-entity proposal for `person` "Ada", plus a field update proposing `role=Mathematician` targeting that same new entity
+When the user runs `forte agent process 7 --bulk-commit`
+And the stubbed editor renames the new-entity line from "Ada" to "Ada Lovelace" AND sets its action to `[n]`, but leaves the field-update line as `[y]`
+Then the process exits with status code 0
+And the entity is created anyway (promotion) under the edited name "Ada Lovelace"
+And running `forte entity show` for it afterward shows `role` set to "Mathematician"
+```
+
 ### Scenario: `--bulk-commit --yes` together — `--yes` wins, no editor is invoked
 
 ```gherkin

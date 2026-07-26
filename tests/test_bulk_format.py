@@ -310,3 +310,77 @@ def test_render_empty_changes_list():
     assert "## Links to existing entities" in text
     assert "## Field updates" in text
     assert parse(text, []) == []
+
+
+# --- parse: renaming new entities --------------------------------------------------
+
+
+def test_parse_rename_new_entity_returns_renamed_copy():
+    change = _new_entity(name="Alice")
+    text = render([change])
+    edited = text.replace("entity: Alice", "entity: Alicia Renamed")
+
+    decisions = parse(edited, [change])
+
+    assert decisions[0].approved is True
+    assert decisions[0].change.name == "Alicia Renamed"
+    # Original proposal is left untouched (replace returns a copy).
+    assert change.name == "Alice"
+    # Other fields carried over unchanged.
+    assert decisions[0].change.schema == change.schema
+    assert decisions[0].change.supporting_quote == change.supporting_quote
+
+
+def test_parse_rename_preserves_aliases_and_fields():
+    change = _new_entity(name="Alice", aliases=["Al"], fields={"role": "eng"})
+    text = render([change])
+    edited = text.replace("entity: Alice", "entity: Alicia")
+
+    renamed = parse(edited, [change])[0].change
+
+    assert renamed.name == "Alicia"
+    assert renamed.aliases == ["Al"]
+    assert renamed.fields == {"role": "eng"}
+
+
+def test_parse_rename_can_combine_with_rejection():
+    change = _new_entity(name="Alice")
+    text = render([change])
+    edited = text.replace("[y] c0  New person entity: Alice", "[n] c0  New person entity: Alicia")
+
+    decision = parse(edited, [change])[0]
+
+    # Renamed on the change even though it was rejected — the orchestrator
+    # decides whether the (renamed) proposal is created (e.g. via promotion).
+    assert decision.approved is False
+    assert decision.change.name == "Alicia"
+
+
+def test_parse_unchanged_name_returns_same_object():
+    change = _new_entity(name="Alice")
+    text = render([change])
+
+    decision = parse(text, [change])[0]
+
+    assert decision.change is change  # no copy made when nothing was renamed
+
+
+def test_parse_blanked_name_keeps_original():
+    change = _new_entity(name="Alice")
+    text = render([change])
+    edited = text.replace("entity: Alice", "entity:")
+
+    decision = parse(edited, [change])[0]
+
+    assert decision.change.name == "Alice"
+
+
+def test_parse_rename_only_applies_to_new_entities_not_links():
+    link = _link(candidate_name="Bob", entity_id=5, entity_name="Bob Smith")
+    text = render([link])
+    # Editing the link's display text must not rename anything.
+    edited = text.replace("Bob Smith", "Robert Smith")
+
+    decision = parse(edited, [link])[0]
+
+    assert decision.change is link
