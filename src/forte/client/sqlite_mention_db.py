@@ -1,10 +1,8 @@
 import sqlite3
 from datetime import UTC, datetime
-from pathlib import Path
 
 from forte.interface.mention_db import IMentionDb
-from forte.model.vault import VaultLayout
-from forte.services.discovery import find_vault_root
+from forte.model.vault import VaultContext, VaultLayout
 
 
 class SqliteMentionDb(IMentionDb):
@@ -14,14 +12,23 @@ class SqliteMentionDb(IMentionDb):
     markdown counterpart to dual-write. This client only reads/writes that
     table.
 
-    Resolves the vault root (and opens a fresh connection) from the current
-    working directory on every call, so it can be constructed unconditionally
-    at wiring time — callers only see a `VaultNotFoundError` when a method
-    that actually needs a vault is invoked outside of one.
+    Resolves the vault root (and opens a fresh connection) from the injected
+    `VaultContext` on every call, so it can be constructed unconditionally at
+    wiring time, before the active vault is known — callers only see a
+    `NoDefaultVaultError` when a method that actually needs a vault is
+    invoked before one has been selected.
     """
 
+    def __init__(self, context: VaultContext):
+        """
+        Args:
+            context (VaultContext): Holds the active vault root, resolved
+                lazily on each call.
+        """
+        self._context = context
+
     def _layout(self) -> VaultLayout:
-        root = find_vault_root(Path.cwd())
+        root = self._context.get_root()
         return VaultLayout(root)
 
     def exists(self, doc_id: int, entity_id: int) -> bool:

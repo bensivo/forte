@@ -9,14 +9,16 @@ from forte.client.sqlite_document_db import SqliteDocumentDb
 from forte.client.sqlite_entity_db import SqliteEntityDb
 from forte.client.sqlite_mention_db import SqliteMentionDb
 from forte.client.sqlite_schema_db import SqliteSchemaDb
+from forte.client.yaml_vault_registry import YamlVaultRegistry
 from forte.controller.cli_document_controller import CliDocumentController
 from forte.controller.cli_entity_controller import CliEntityController
-from forte.controller.cli_init_controller import CliInitController
 from forte.controller.cli_schema_controller import CliSchemaController
+from forte.controller.cli_vault_controller import CliVaultController
+from forte.model.vault import VaultContext
 from forte.service.document_service import DocumentService
 from forte.service.entity_service import EntityService
-from forte.service.init_service import InitService
 from forte.service.schema_service import SchemaService
+from forte.service.vault_service import VaultService
 
 
 @click.group(invoke_without_command=True)
@@ -27,29 +29,35 @@ def main(ctx: click.Context) -> None:
         click.echo(ctx.get_help())
 
 
-# Add the 'init' command and service
-init_vault_fs = LocalVaultFs()
-init_service = InitService(init_vault_fs)
-init_controller = CliInitController(init_service)
-main.add_command(init_controller.command())
+# Shared across all clients that need to resolve a vault root. The schema /
+# entity / doc controllers set it once per invocation, from the vault named
+# by `--vault` or from the registered default vault.
+vault_context = VaultContext()
+
+# Add the 'vault' sub-commands
+vault_registry = YamlVaultRegistry()
+vault_fs = LocalVaultFs()
+vault_service = VaultService(vault_registry, vault_fs)
+vault_controller = CliVaultController(vault_service)
+main.add_command(vault_controller.group())
 
 # Add the 'schema' sub-commands
-schema_db = SqliteSchemaDb()
+schema_db = SqliteSchemaDb(vault_context)
 schema_service = SchemaService(schema_db)
-schema_controller = CliSchemaController(schema_service)
+schema_controller = CliSchemaController(schema_service, vault_service, vault_context)
 main.add_command(schema_controller.group())
 
 # Add the 'entity' sub-commands
-entity_db = SqliteEntityDb()
+entity_db = SqliteEntityDb(vault_context)
 entity_service = EntityService(entity_db, schema_db)
-entity_controller = CliEntityController(entity_service)
+entity_controller = CliEntityController(entity_service, vault_service, vault_context)
 main.add_command(entity_controller.group())
 
 # Add the 'doc' sub-commands
-document_db = SqliteDocumentDb()
-mention_db = SqliteMentionDb()
+document_db = SqliteDocumentDb(vault_context)
+mention_db = SqliteMentionDb(vault_context)
 document_service = DocumentService(document_db, mention_db, entity_db)
-document_controller = CliDocumentController(document_service)
+document_controller = CliDocumentController(document_service, vault_service, vault_context)
 main.add_command(document_controller.group())
 
 

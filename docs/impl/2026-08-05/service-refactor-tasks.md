@@ -1,5 +1,7 @@
 # docs/impl/2026-08-05/service-refactor-tasks.md
 
+NOTE: we never did all of these, just refactoring document, entity, and linking services. Teh vault stuff we went a different direection
+
 - Refactor document service into 3-layer style
 - Refactor entity service into 3-layer style
 - Refactor linking into entity service

@@ -10,7 +10,7 @@ MVP is a local Python CLI targeting individual knowledge workers. See [docs/proj
 
 ### UJ1 — First-time setup
 
-1. Ben installs Forte, `cd`s into a new folder, and runs `forte init` to create a vault.
+1. Ben installs Forte and runs `forte vault create personal ./my-notes` to create a vault, which becomes his default automatically.
 2. He defines two schemas via `forte schema add person` and `forte schema add project`, specifying the fields he cares about.
 3. He runs `forte doc ingest ./notes/kickoff.md`.
 4. The TUI walks him through each proposed entity, link, and field-set one at a time.
@@ -36,9 +36,11 @@ MVP is a local Python CLI targeting individual knowledge workers. See [docs/proj
 
 ### Init, config, and vaults
 
-- Forte shall provide `forte init` to create a new vault, laying down `.forte/`, `docs/raw/`, `docs/processed/`, and `entities/`.
-- Forte shall discover the current vault by walking up from the current working directory to find a `.forte/` directory (git-style).
-- Forte shall read model choice, API keys, and basic operational settings from `.forte/config.yaml`.
+- Forte shall provide `forte vault create <name> <path>` to create a new vault at any directory on disk, laying down `forte.db`, `forte.yaml`, `docs/raw/`, `docs/processed/`, `docs/staging/`, and `entities/` directly at that path (no `.forte/` wrapper folder).
+- Forte shall register vaults by name in a user-level registry at `~/.forte/config.yaml`, and provide `forte vault list`, `forte vault show <name>`, `forte vault remove <name>`, and `forte vault set-default <name>` to manage that registry.
+- Forte shall resolve which vault a command operates on by: (1) the vault named by a `--vault <name>` option, if given; otherwise (2) the registry's default vault. There is no cwd-based (git-style) discovery — vaults are addressed by name from any working directory, and a command with no default vault set and no `--vault` shall fail with a clear error telling the user to run `forte vault create` or `forte vault set-default`.
+- Creating the first vault shall automatically make it the default.
+- Forte shall read model choice, API keys, and basic operational settings from each vault's own `forte.yaml` (distinct from the user-level registry).
 
 ### Schemas
 

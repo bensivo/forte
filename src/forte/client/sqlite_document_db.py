@@ -7,8 +7,7 @@ import yaml
 
 from forte.interface.document_db import IDocumentDb
 from forte.model.document import Document
-from forte.model.vault import VaultLayout
-from forte.services.discovery import find_vault_root
+from forte.model.vault import VaultContext, VaultLayout
 
 _NAME_KEY = "name"
 _SOURCE_PATH_KEY = "source_path"
@@ -28,14 +27,23 @@ class SqliteDocumentDb(IDocumentDb):
     ``documents`` table itself is created by the ``forte init`` bootstrap;
     this client only reads/writes it.
 
-    Resolves the vault root (and opens a fresh connection) from the current
-    working directory on every call, so it can be constructed unconditionally
-    at wiring time — callers only see a `VaultNotFoundError` when a method
-    that actually needs a vault is invoked outside of one.
+    Resolves the vault root (and opens a fresh connection) from the injected
+    `VaultContext` on every call, so it can be constructed unconditionally at
+    wiring time, before the active vault is known — callers only see a
+    `NoDefaultVaultError` when a method that actually needs a vault is
+    invoked before one has been selected.
     """
 
+    def __init__(self, context: VaultContext):
+        """
+        Args:
+            context (VaultContext): Holds the active vault root, resolved
+                lazily on each call.
+        """
+        self._context = context
+
     def _layout(self) -> VaultLayout:
-        root = find_vault_root(Path.cwd())
+        root = self._context.get_root()
         return VaultLayout(root)
 
     def _rel_path(self, layout: VaultLayout, path: Path) -> str:

@@ -1,13 +1,13 @@
 # `forte entity` Spec
 
-Behavior spec for the `forte entity` command group — `forte entity add`, `forte entity list`, `forte entity show`, `forte entity edit`, and `forte entity remove` — which create, inspect, edit, and delete the entities that make up a Forte knowledge base. An entity is an instance of a defined schema: it has a built-in `name` and list of `aliases`, plus exactly that schema's user-defined fields (empty values allowed, no missing or extra fields). Unlike schemas, entities are part of the human-readable knowledge base, so every write **dual-writes** to a markdown file at `entities/<schema>/<slug>.md` (YAML frontmatter carrying `name`/`aliases` and the schema fields, followed by a free-form body) AND a row in the SQLite `entities` table. Ids are integers assigned by SQLite. These commands operate on an existing vault, discovered git-style by walking up from the current working directory to find a `.forte/` directory.
+Behavior spec for the `forte entity` command group — `forte entity add`, `forte entity list`, `forte entity show`, `forte entity edit`, and `forte entity remove` — which create, inspect, edit, and delete the entities that make up a Forte knowledge base. An entity is an instance of a defined schema: it has a built-in `name` and list of `aliases`, plus exactly that schema's user-defined fields (empty values allowed, no missing or extra fields). Unlike schemas, entities are part of the human-readable knowledge base, so every write **dual-writes** to a markdown file at `entities/<schema>/<slug>.md` (YAML frontmatter carrying `name`/`aliases` and the schema fields, followed by a free-form body) AND a row in the SQLite `entities` table. Ids are integers assigned by SQLite. These commands operate on the default vault registered in `~/.forte/config.yaml`, or on the vault named by a `--vault <name>` option, regardless of the current working directory. See [docs/spec/forte-vault.md](./forte-vault.md) for how vaults are created and registered.
 
 ## Scenarios
 
 ### Scenario: Add an entity with a name and field values
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a schema named `person` exists with fields `employer` and `role`
 When the user runs `forte entity add person --name "Ben Sivongxay" --field employer=Acme --field role=Engineer`
 Then the process prints a success message including the assigned integer id and the entity name
@@ -22,7 +22,7 @@ And running `forte entity show <id>` afterward shows the name and the field valu
 ### Scenario: Add an entity with only a name
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a schema named `person` exists with fields `employer` and `role`
 When the user runs `forte entity add person --name "Ben Sivongxay"`
 Then the process exits with status code 0
@@ -34,7 +34,7 @@ And running `forte entity show <id>` afterward lists `employer` and `role` each 
 ### Scenario: Add an entity for a schema that does not exist
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no schema named `person` exists
 When the user runs `forte entity add person --name "Ben"`
 Then the process prints an error message indicating the schema is unknown
@@ -46,7 +46,7 @@ And no row is inserted into the `entities` table
 ### Scenario: Add an entity with a field not defined by the schema
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a schema named `person` exists with fields `employer` and `role`
 When the user runs `forte entity add person --name "Ben" --field height=tall`
 Then the process prints an error message indicating `height` is not a field of the schema
@@ -58,7 +58,7 @@ And no row is inserted into the `entities` table
 ### Scenario: Add an entity with a missing or empty name
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a schema named `person` exists with fields `employer` and `role`
 When the user runs `forte entity add person` with no `--name`, or with an empty `--name ""`
 Then the process prints an error message indicating a non-empty name is required
@@ -69,7 +69,7 @@ And no entity is created
 ### Scenario: Add an entity with aliases
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a schema named `person` exists with fields `employer` and `role`
 When the user runs `forte entity add person --name "Ben Sivongxay" --alias "Ben" --alias "Ben S."`
 Then the process exits with status code 0
@@ -80,7 +80,7 @@ And running `forte entity show <id>` afterward lists those aliases
 ### Scenario: List entities in a vault with several defined
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` entity and a `project` entity have been added
 When the user runs `forte entity list`
 Then the process prints one line per entity including its id, schema, and name
@@ -91,7 +91,7 @@ And the process exits with status code 0
 ### Scenario: List entities filtered by schema
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And two `person` entities and one `project` entity have been added
 When the user runs `forte entity list --schema person`
 Then the process prints only the two `person` entities
@@ -102,7 +102,7 @@ And the process exits with status code 0
 ### Scenario: List entities filtered by an unknown schema
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no schema named `widget` exists
 When the user runs `forte entity list --schema widget`
 Then the process prints an error message indicating the schema is unknown
@@ -112,7 +112,7 @@ And the process exits with a non-zero status code
 ### Scenario: List entities in a vault with none defined
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no entities have been added
 When the user runs `forte entity list`
 Then the process prints a friendly message indicating there are no entities yet
@@ -122,7 +122,7 @@ And the process exits with status code 0
 ### Scenario: Show an entity
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` entity has been added with a name, aliases, and field values
 When the user runs `forte entity show <id>`
 Then the process prints the entity's id, schema, and name
@@ -135,7 +135,7 @@ And the process exits with status code 0
 ### Scenario: Show a non-existent entity
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no entity with id `999` exists
 When the user runs `forte entity show 999`
 Then the process prints an error message indicating the entity was not found
@@ -145,7 +145,7 @@ And the process exits with a non-zero status code
 ### Scenario: Edit an entity's name, fields, and aliases
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` entity with fields `employer` and `role` has been added
 When the user runs `forte entity edit <id> --name "Ben S." --set role=Engineer --add-alias "Benny" --remove-alias "Ben"`
 Then the process prints a confirmation message
@@ -157,7 +157,7 @@ And the on-disk markdown file reflects the same changes
 ### Scenario: Edit an entity's name renames the markdown file
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` entity named `Ben Sivongxay` has been added
 When the user runs `forte entity edit <id> --name "Benjamin Sivongxay"`
 Then the process exits with status code 0
@@ -169,7 +169,7 @@ And the entity's stored `file_path` reflects the new filename
 ### Scenario: Edit an entity with a field not defined by the schema
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` entity with fields `employer` and `role` has been added
 When the user runs `forte entity edit <id> --set height=tall`
 Then the process prints an error message indicating `height` is not a field of the schema
@@ -180,7 +180,7 @@ And the entity is unchanged in both the markdown file and the `entities` table
 ### Scenario: Edit a non-existent entity
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no entity with id `999` exists
 When the user runs `forte entity edit 999 --name "Whoever"`
 Then the process prints an error message indicating the entity was not found
@@ -191,7 +191,7 @@ And nothing is created or changed
 ### Scenario: Remove an entity
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` entity has been added
 When the user runs `forte entity remove <id> --yes`
 Then the process prints a success message indicating the entity was removed
@@ -205,7 +205,7 @@ And running `forte entity show <id>` afterward exits with a non-zero status code
 ### Scenario: Remove a non-existent entity
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no entity with id `999` exists
 When the user runs `forte entity remove 999 --yes`
 Then the process prints an error message indicating the entity was not found
@@ -213,15 +213,34 @@ And the process exits with a non-zero status code
 And nothing is removed
 ```
 
-### Scenario: Run an entity subcommand outside a vault
+### Scenario: Run an entity subcommand with no default vault set and no `--vault`
 
 ```gherkin
-Given the current working directory is not inside a Forte vault
-And no `.forte/` directory exists in the current directory or any ancestor
-When the user runs any `forte entity` subcommand (`add`, `list`, `show`, `edit`, or `remove`)
-Then the process prints an error message indicating the user is not inside a Forte vault
+Given no default vault is registered in `~/.forte/config.yaml`
+When the user runs any `forte entity` subcommand (`add`, `list`, `show`, `edit`, or `remove`) with no `--vault` option
+Then the process prints a clear error message telling the user to run `forte vault create` or `forte vault set-default`
 And the process exits with a non-zero status code
 And no entity is created, listed, shown, edited, or removed
+```
+
+### Scenario: Run an entity subcommand against a non-default vault via `--vault`
+
+```gherkin
+Given a vault named `personal` is the default and has no `person` entities
+And a vault named `work` is registered, with a `person` schema and a `person` entity named "Ben Sivongxay"
+When the user runs `forte entity list --vault work`
+Then the process prints the "Ben Sivongxay" entity
+And the process exits with status code 0
+And running `forte entity list` (no `--vault`) afterward still shows no entities, since it targets the default vault `personal`
+```
+
+### Scenario: Run an entity subcommand with an unknown `--vault` name
+
+```gherkin
+Given no vault named `missing` is registered
+When the user runs `forte entity list --vault missing`
+Then the process prints an error message indicating the vault was not found
+And the process exits with a non-zero status code
 ```
 
 ## Out of scope

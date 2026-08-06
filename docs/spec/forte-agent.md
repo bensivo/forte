@@ -1,6 +1,6 @@
 # `forte agent` Spec
 
-Behavior spec for the `forte agent` command group — `forte agent process` and `forte agent ingest` — which run the LLM-driven pipeline that turns an ingested document into proposed entities, links, and field values, walks the user through reviewing each proposal, and commits the approved ones to the knowledge base. `agent process <doc-id>` runs the pipeline (extract entities → review → link/create entities → review → extract structured fields → review → commit) against a document that has already been ingested via `forte doc ingest`. `agent ingest <path>` is a convenience wrapper that runs `forte doc ingest` and then `forte agent process` in one command. All pipeline state (candidates, proposed changes, approve/reject decisions) is held **in memory** for the duration of the run; nothing is written to markdown or SQLite until the final commit step, and every scenario below runs against a **stubbed LLM boundary** — deterministic, scripted responses with zero cost — never a live model. These commands operate on an existing vault, discovered git-style by walking up from the current working directory to find a `.forte/` directory.
+Behavior spec for the `forte agent` command group — `forte agent process` and `forte agent ingest` — which run the LLM-driven pipeline that turns an ingested document into proposed entities, links, and field values, walks the user through reviewing each proposal, and commits the approved ones to the knowledge base. `agent process <doc-id>` runs the pipeline (extract entities → review → link/create entities → review → extract structured fields → review → commit) against a document that has already been ingested via `forte doc ingest`. `agent ingest <path>` is a convenience wrapper that runs `forte doc ingest` and then `forte agent process` in one command. All pipeline state (candidates, proposed changes, approve/reject decisions) is held **in memory** for the duration of the run; nothing is written to markdown or SQLite until the final commit step, and every scenario below runs against a **stubbed LLM boundary** — deterministic, scripted responses with zero cost — never a live model. These commands operate on the default vault registered in `~/.forte/config.yaml`, or on the vault named by a `--vault <name>` option, regardless of the current working directory. See [docs/spec/forte-vault.md](./forte-vault.md) for how vaults are created and registered.
 
 **Review flow / flag precedence.** By **default** (no flags) the agent reviews all proposals in a single text-editor pass — the **bulk** flow, specified separately in [docs/spec/forte-agent-bulk-commit.md](./forte-agent-bulk-commit.md). The `--interactive`/`-i` flag selects the one-at-a-time `[y/n]` review that most scenarios in *this* file exercise (so those scenarios pass `-i` explicitly). `--yes` takes precedence over both — it auto-approves every proposal with no editor and no prompts. `--dry-run` composes with all three.
 
@@ -9,7 +9,7 @@ Behavior spec for the `forte agent` command group — `forte agent process` and 
 ### Scenario: Walk through proposed entities, links, and fields one at a time
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists with fields `employer` and `role`
 And a document has been ingested with id 7, whose text mentions a new person "Ada Lovelace"
 And the LLM is stubbed to extract one candidate entity `Ada Lovelace` (schema `person`) with a supporting quote
@@ -27,7 +27,7 @@ And running `forte entity show <id>` afterward shows `role` set to `Mathematicia
 ### Scenario: Rejected proposals are not written
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to extract one candidate entity `Ada Lovelace` (schema `person`) that resolves to a new-entity proposal
@@ -41,7 +41,7 @@ And no row is added to the `mentions` table for document 7
 ### Scenario: `--yes` auto-approves everything non-interactively
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists with fields `employer` and `role`
 And a document has been ingested with id 7
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
@@ -56,7 +56,7 @@ And a row for the entity and a row in `mentions` linking it to document 7 are bo
 ### Scenario: `--dry-run` writes nothing
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
@@ -74,7 +74,7 @@ And running `forte doc show 7` afterward shows no newly linked entity
 ### Scenario: Process a non-existent document id
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no document with id 99 exists
 When the user runs `forte agent process 99`
 Then the process prints an error message indicating the document was not found
@@ -86,7 +86,7 @@ And no LLM call is made
 ### Scenario: A step's LLM call exhausts all retries and the run aborts with nothing committed
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to return malformed/schema-invalid JSON for the extract-entities step on every attempt, for all 5 retries
@@ -101,7 +101,7 @@ And no new markdown file is created under `entities/`
 ### Scenario: A step returning zero results skips cleanly to done
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a document has been ingested with id 7
 And the LLM is stubbed so the extract-entities step returns zero candidates
 When the user runs `forte agent process 7 --yes`
@@ -114,7 +114,7 @@ And no row is added to the `entities` or `mentions` tables
 ### Scenario: A candidate matching an existing entity is proposed as a link, not a duplicate
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And an entity `Ada Lovelace` (schema `person`) already exists with id 3, with alias `Ada`
 And a document has been ingested with id 7, whose text mentions "Ada"
 And the LLM is stubbed to extract a candidate named `Ada` (schema `person`)
@@ -131,7 +131,7 @@ And no second markdown file is created under `entities/person/`
 ### Scenario: A candidate with no rule match is proposed as a new entity
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And no existing entity's name, alias, or normalized name matches "Grace Hopper"
 And a document has been ingested with id 7, whose text mentions "Grace Hopper"
 And the LLM is stubbed to extract a candidate named `Grace Hopper` (schema `person`)
@@ -146,7 +146,7 @@ And a new row is present in the `entities` table
 ### Scenario: An approved link persists the LLM's supporting quote
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And an entity `Ada Lovelace` exists with id 3
 And a document has been ingested with id 7
 And the LLM is stubbed to propose a link to entity 3 with supporting quote "Ada Lovelace wrote the first algorithm"
@@ -158,7 +158,7 @@ And the new row in the `mentions` table linking document 7 and entity 3 has its 
 ### Scenario: Field extraction only fills empty fields, never overwrites existing values
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And an entity `Ada Lovelace` (schema `person`, fields `employer` and `role`) exists with id 3
 And `employer` is already set to "Analytical Engine Co." and `role` is empty
 And a document has been ingested with id 7 that links to entity 3 during this run
@@ -172,7 +172,7 @@ And running `forte entity show 3` afterward shows `role` set to "Mathematician" 
 ### Scenario: `agent ingest` ingests a file and processes it in one command
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a file `kickoff.md` exists on disk outside the vault
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
 When the user runs `forte agent ingest kickoff.md --yes`
@@ -187,7 +187,7 @@ And a markdown file for the new entity exists under `entities/`, with a `mention
 ### Scenario: `agent ingest --dry-run` ingests the file but writes no entities or mentions
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a file `kickoff.md` exists on disk outside the vault
 And the LLM is stubbed to extract a candidate entity that resolves to a new-entity proposal
 When the user runs `forte agent ingest kickoff.md -i --dry-run`
@@ -200,7 +200,7 @@ And no row is added to the `mentions` table
 ### Scenario: A completed run prints a cost/usage summary
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a document has been ingested with id 7
 And the LLM is stubbed to return known token-usage figures for each call it services during the run
 When the user runs `forte agent process 7 --yes`
@@ -209,15 +209,36 @@ And the process prints a summary line reporting total input tokens, output token
 And the summary is clearly labeled as an estimate
 ```
 
-### Scenario: Run an agent subcommand outside a vault
+### Scenario: Run an agent subcommand with no default vault set and no `--vault`
 
 ```gherkin
-Given the current working directory is not inside a Forte vault
-And no `.forte/` directory exists in the current directory or any ancestor
-When the user runs any `forte agent` subcommand (`process` or `ingest`)
-Then the process prints an error message indicating the user is not inside a Forte vault
+Given no default vault is registered in `~/.forte/config.yaml`
+When the user runs any `forte agent` subcommand (`process` or `ingest`) with no `--vault` option
+Then the process prints a clear error message telling the user to run `forte vault create` or `forte vault set-default`
 And the process exits with a non-zero status code
 And no document, entity, or mention is created, modified, or removed
+And no LLM call is made
+```
+
+### Scenario: Run an agent subcommand against a non-default vault via `--vault`
+
+```gherkin
+Given a vault named `personal` is the default
+And a vault named `work` is registered, with a `person` schema and a document ingested with id 7
+And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
+When the user runs `forte agent process 7 --yes --vault work`
+Then the process exits with status code 0
+And a markdown file for the new entity exists under the `work` vault's `entities/person/`
+And the `personal` vault is unaffected
+```
+
+### Scenario: Run an agent subcommand with an unknown `--vault` name
+
+```gherkin
+Given no vault named `missing` is registered
+When the user runs `forte agent process 7 --vault missing`
+Then the process prints an error message indicating the vault was not found
+And the process exits with a non-zero status code
 And no LLM call is made
 ```
 

@@ -13,7 +13,7 @@ Every scenario below runs against a **stubbed LLM boundary** (deterministic, scr
 ### Scenario: All proposals are presented in one editor pass, unlike the `--interactive` flow's two review points
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists with fields `employer` and `role`
 And a `project` schema exists
 And a document has been ingested with id 7
@@ -80,7 +80,7 @@ And this has the same observable effect as `[n]`
 ### Scenario: Edge case — approving a field-set on a skipped new entity creates the entity anyway
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists with field `role`
 And a document has been ingested with id 7
 And the LLM is stubbed to extract one candidate that resolves to a new-entity proposal for `person` "Grace Hopper" (no rule-based link match), plus a field update proposing `role=Rear Admiral` targeting that same new entity
@@ -96,7 +96,7 @@ And running `forte entity show` for the new entity afterward shows `role` set to
 ### Scenario: Renaming a proposed new entity creates it under the edited name
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists with field `role`
 And a document has been ingested with id 7
 And the LLM is stubbed to extract one candidate that resolves to a new-entity proposal for `person` "Ada" (no rule-based link match), plus a field update proposing `role=Mathematician` targeting that same new entity
@@ -112,7 +112,7 @@ And no entity named "Ada" is created
 ### Scenario: A renamed new entity that is skipped but promoted is created under the edited name
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists with field `role`
 And a document has been ingested with id 7
 And the LLM is stubbed to extract one candidate that resolves to a new-entity proposal for `person` "Ada", plus a field update proposing `role=Mathematician` targeting that same new entity
@@ -126,7 +126,7 @@ And running `forte entity show` for it afterward shows `role` set to "Mathematic
 ### Scenario: `--yes` overrides the default bulk flow — no editor is invoked
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
@@ -141,7 +141,7 @@ And a row for the entity and a row in `mentions` linking it to document 7 are bo
 ### Scenario: `--dry-run` with the default bulk flow — editor runs, nothing is committed
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
@@ -158,7 +158,7 @@ And no row is added to the `mentions` table
 ### Scenario: Editor abort — nothing is committed and the run fails clearly
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists
 And a document has been ingested with id 7
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it
@@ -174,7 +174,7 @@ And no row is added to the `mentions` table
 ### Scenario: Zero proposals — the editor is never opened
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a document has been ingested with id 7
 And the LLM is stubbed so the extract-entities step returns zero candidates
 When the user runs `forte agent process 7`
@@ -187,7 +187,7 @@ And no row is added to the `entities` or `mentions` tables
 ### Scenario: `agent ingest` (default bulk flow) end-to-end
 
 ```gherkin
-Given the current working directory is inside a Forte vault
+Given a default vault is set
 And a `person` schema exists with field `role`
 And a file `kickoff.md` exists on disk outside the vault, whose text mentions a new person "Ada Lovelace"
 And the LLM is stubbed to extract a candidate entity, resolve it as new, and extract a field value for it

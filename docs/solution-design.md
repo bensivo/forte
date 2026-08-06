@@ -4,11 +4,13 @@ This document describes *how* Forte's MVP will be built. Requirements live in [p
 
 ## Overview
 
-Forte is a single-binary Python CLI that operates on a local vault directory. A vault holds three kinds of state:
+Forte is a single-binary Python CLI that operates on one or more vaults — plain directories anywhere on disk, registered by name in a user-level registry. A vault holds three kinds of state:
 
 1. **Markdown files** on disk — the human-readable source of truth for raw docs, processed docs, and entities.
-2. **SQLite index** (`.forte/index.db`) — the queryable representation of the same data, used for fast lookups, filtering, and semantic search.
-3. **Config** (`.forte/config.yaml`) — model choice, API keys, operational settings.
+2. **SQLite index** (`forte.db`) — the queryable representation of the same data, used for fast lookups, filtering, and semantic search.
+3. **Config** (`forte.yaml`) — model choice, API keys, operational settings.
+
+A separate, user-level file — `~/.forte/config.yaml` — records which vaults exist and which one is the default (see "Vault Discovery and the Registry" below). It is distinct from each vault's own `forte.yaml`.
 
 Both the markdown files and SQLite index are authoritative. Every write operation updates both; the CLI does not attempt to reconcile drift between them at MVP.
 
@@ -53,19 +55,23 @@ and clear invariants over breadth.
 
 ## Vault Folder Structure
 
+A vault is a plain directory — anywhere on disk, given any name — with no wrapper folder. There is no `.forte/` directory; `forte.db` and `forte.yaml` sit directly at the vault root alongside `docs/` and `entities/`:
+
 ```
 my-vault/
-  .forte/
-    index.db              SQLite index of docs, entities, links, embeddings
-    config.yaml           Model choice, API keys, operational settings
+  forte.db               SQLite index of docs, entities, links, embeddings
+  forte.yaml              Model choice, API keys, operational settings
   docs/
     raw/                  Copies of original ingested source documents (immutable)
     processed/            Post-extraction markdown, linked back to raw originals
+    staging/               Scratch space used mid-pipeline before a doc is committed
   entities/
     person/               One markdown file per Person entity
     project/              One markdown file per Project entity
     <schema>/             One folder per user-defined schema
 ```
+
+`forte vault create <name> <path>` lays down this structure at `<path>` and registers it under `<name>` in the user-level registry — see "Vault Discovery and the Registry" below.
 
 ### File conventions
 
@@ -104,25 +110,47 @@ Entities and documents are identified by **auto-increment integers** assigned by
 ## CLI Spec
 
 ```
-forte init                              Create a new vault in the current directory
+forte vault create <name> <path>        Create a new vault at <path> and register it as <name>
+forte vault list                        List all registered vaults, marking the default
+forte vault show <name>                 Show a vault's name, absolute path, and default status
+forte vault remove <name>               Unregister a vault (does not delete files on disk)
+forte vault set-default <name>          Change which registered vault is the default
 
-forte schema add <name>                 Define a new schema (entity kind) and its fields
-forte schema list                       List all schemas in the vault
-forte schema remove <name>              Remove a schema
+forte schema add <name> [--vault <name>]      Define a new schema (entity kind) and its fields
+forte schema list [--vault <name>]            List all schemas in the vault
+forte schema remove <name> [--vault <name>]   Remove a schema
 
-forte entity add <schema>               Manually create a new entity of the given schema
-forte entity list [--schema <schema>]     List entities, optionally filtered by schema
-forte entity show <id>                  Show an entity's fields and linked docs
-forte entity edit <id>                  Edit an entity's fields and aliases
-forte entity remove <id>                Remove an entity
-forte entity search <query>             Semantic search over entity names, aliases, content
+forte entity add <schema> [--vault <name>]             Manually create a new entity of the given schema
+forte entity list [--schema <schema>] [--vault <name>]   List entities, optionally filtered by schema
+forte entity show <id> [--vault <name>]                Show an entity's fields and linked docs
+forte entity edit <id> [--vault <name>]                Edit an entity's fields and aliases
+forte entity remove <id> [--vault <name>]              Remove an entity
+forte entity search <query> [--vault <name>]           Semantic search over entity names, aliases, content
 
-forte doc ingest <path> [--yes]         Ingest a document; --yes auto-approves all changes
-forte doc list                          List ingested documents
-forte doc show <id>                     Show a document's contents and extracted entities
+forte doc ingest <path> [--yes] [--vault <name>]       Ingest a document; --yes auto-approves all changes
+forte doc list [--vault <name>]                        List ingested documents
+forte doc show <id> [--vault <name>]                   Show a document's contents and extracted entities
 ```
 
-Vault discovery is git-style: each command walks up from CWD looking for a `.forte/` directory.
+`--vault <name>` is available on every `schema`/`entity`/`doc`/`agent` group (applied at the group level, e.g. `forte doc --vault work ingest ./notes.md`). When omitted, commands operate on the default vault. See "Vault Discovery and the Registry" below.
+
+## Vault Discovery and the Registry
+
+Vaults are registered by name in a user-level file, `~/.forte/config.yaml`:
+
+```yaml
+default: personal
+vaults:
+  personal: /Users/ben/notes
+  work: /Users/ben/work-notes
+```
+
+There is no cwd-based discovery — vaults are addressed purely by name, from any working directory. Resolution order for a given command:
+
+1. If `--vault <name>` is passed, resolve that name against the registry (error if not found).
+2. Otherwise, use `default:` from the registry (error, telling the user to run `forte vault create` or `forte vault set-default`, if no default is set).
+
+`forte vault create <name> <path>` registers the resolved, absolute form of `<path>`. If no default is currently set, the newly created vault automatically becomes the default. `forte vault remove <name>` only deletes the registry entry — it never touches files on disk — and clears the default if the removed vault was the default.
 
 ## SQLite Schema (draft)
 
@@ -211,7 +239,7 @@ Candidates plus the surrounding doc context are handed to the LLM, which returns
 
 ## Configuration
 
-`.forte/config.yaml`:
+Each vault's own `forte.yaml` (at the vault root, not the user-level registry) holds model/API-key settings:
 
 ```yaml
 model:
@@ -224,6 +252,7 @@ Additional keys added as needed. API keys can be interpolated from environment v
 
 ## Resolved Since V0
 
+- **Vault model** → vaults are plain directories anywhere on disk (`forte.db`/`forte.yaml`, no `.forte/`), registered by name in a user-level `~/.forte/config.yaml` registry; `forte init` and cwd-based git-style discovery are removed in favor of `forte vault create`/`--vault`/the default vault.
 - **CLI framework** → Click.
 - **TUI library** → Rich prompts.
 - **Packaging / distribution** → `uv`.
