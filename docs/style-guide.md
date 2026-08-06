@@ -52,6 +52,8 @@ Rules for how to organize code in this project, and on how differnet components 
 - Put all controllers in the `controller` directory
 - Name each controller `<interface><service>Controller`. For example `CliDocController`, meaning this controller implements the CLI interface for the DocService.
 - Define controllers as classes, with necessary services injected in teh constructor (top-level wiring happens in a main.py)
+- For CLI controllers, build the `click.Group` in a `group()` method with nested command functions that just unpack CLI args and delegate to a private method of the same name on the controller (e.g. `schema.command("add")` calls `controller._add(...)`). Keep all real logic, error handling, and echoing in the private method, not the nested Click callback.
+- Wrap every service call in a `try/except`, catching the feature's base error class (e.g. `SchemaError`) together with `VaultNotFoundError`, and re-raise as `click.ClickException(str(e))`. Don't catch specific subclasses individually.
 
 ## Writing Services
 - Services implement the core functions exposed by the application, and operate solely on abstract data models, and injected interfaces for dependencies. 
@@ -59,6 +61,13 @@ Rules for how to organize code in this project, and on how differnet components 
 - Services will need external integrations with clients, these should be injected as implementations of interfaces. Define the interfaces in the `interface` directory
 - Name each service based on a grouping of features / functionality. e.g. "DocService" for all operations related to document management. 
 - Define services as classes, with necessary interfaces injected in the constructor (top-level wiring happens in a main.py)
+- Validate all inputs fully before making any write calls to a client. If validation fails partway through, no client method should have been called yet (e.g. `SchemaService.create_schema` runs every check on `name` and `field_names` before ever touching `schema_db`). This avoids partial writes that would need cleanup.
+- Every method that can raise must document exactly which exception types it raises, and under what condition, in its docstring's `Raises:` section — not just "raises on invalid input".
+
+## Writing Interfaces
+- Name each interface `I<Noun>`, e.g. `ISchemaDb`. Its methods describe storage/IO operations only — no business logic or validation.
+- Interface methods don't raise feature errors themselves (no `Raises:` in their docstrings); validation and error-raising happens in the service that calls them.
+- Order interface (and client) methods consistently: an existence check first (e.g. `check_exists`), then CRUD in create/read/list/delete order, then any extra query methods (e.g. `count_entities`) last.
 
 ## Writing Clients
 - Clients give concrete implementations of the abstract interfaces defined in the `interface` directory, used by services.
@@ -86,3 +95,9 @@ Rules for how to organize code in this project, and on how differnet components 
     ```
 - NOTE: class __init__ functions don't need docstrings. It's obvious what they do
 - Each class should also start with a multiline doc string describing what is contained in that class, and what it does.
+- Private module-level constants (e.g. regexes, reserved-value sets) get a `_leading_underscore`, `UPPER_SNAKE_CASE` name and a one-line comment above explaining what they're for.
+
+## Exceptions
+- Each feature defines its exceptions in its `model/` file (not in `service/`), as one base error class per feature plus specific subclasses. E.g. `model/schema.py` defines `SchemaError` and subclasses `InvalidSchemaError`, `SchemaExistsError`, `SchemaNotFoundError`, `SchemaInUseError`.
+- The base class's docstring is just `"""Base class for <feature> errors."""`; each subclass's docstring states the one condition that raises it.
+- Only services raise these exceptions; clients and interfaces don't.

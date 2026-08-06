@@ -1,0 +1,84 @@
+from abc import ABC, abstractmethod
+from pathlib import Path
+
+from forte.model.document import Document
+
+
+class IDocumentDb(ABC):
+    """
+    Interface for persisting and querying documents. Implementations handle
+    storage of document records (raw/processed copies and their DB row) and
+    provide the identity lookup needed to detect a no-op re-ingest.
+    """
+
+    @abstractmethod
+    def find_by_identity(self, source_path: str, content_hash: str) -> Document | None:
+        """
+        Return the document with a matching ``source_path``/``content_hash``.
+
+        Args:
+            source_path (str): The normalized source path to look up.
+            content_hash (str): The content hash to look up.
+
+        Returns:
+            (Document | None) The matching document, or None if no prior
+                document matches both fields.
+        """
+        pass
+
+    @abstractmethod
+    def add(
+        self, source_path: Path, content_hash: str, extracted_text: str, name: str
+    ) -> Document:
+        """
+        Persist a new document: store its raw and processed copies and
+        insert its row.
+
+        Args:
+            source_path (Path): The (already-normalized) source path.
+            content_hash (str): The content hash of the source bytes.
+            extracted_text (str): The extracted plain text to store as the
+                processed copy's body.
+            name (str): The document's human-readable name.
+
+        Returns:
+            (Document) The stored document, with its assigned ``id``,
+                ``raw_path``, and ``processed_path`` populated.
+        """
+        pass
+
+    @abstractmethod
+    def list(self) -> list[Document]:
+        """
+        Return all documents, ordered by id.
+
+        Returns:
+            (list[Document]) All documents.
+        """
+        pass
+
+    @abstractmethod
+    def get(self, id: int) -> Document | None:
+        """
+        Return a single document by id.
+
+        Args:
+            id (int): The document id to look up.
+
+        Returns:
+            (Document | None) The document, or None if it does not exist.
+        """
+        pass
+
+    @abstractmethod
+    def remove(self, id: int) -> None:
+        """
+        Delete a document, along with its raw and processed copies, by id.
+
+        Args:
+            id (int): The document id to remove.
+
+        Returns:
+            None
+        """
+        pass

@@ -58,6 +58,20 @@ class SqliteSchemaDb(ISchemaDb):
         finally:
             conn.close()
 
+    def get(self, name: str) -> Schema | None:
+        layout = self._layout()
+        conn = sqlite3.connect(layout.db_path)
+        try:
+            row = conn.execute(
+                "SELECT name, fields_json FROM schemas WHERE name = ?",
+                (name,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        return self._row_to_schema(row[0], row[1])
+
     def list(self) -> list[Schema]:
         layout = self._layout()
         conn = sqlite3.connect(layout.db_path)

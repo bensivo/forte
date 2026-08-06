@@ -37,6 +37,19 @@ class ISchemaDb(ABC):
         pass
 
     @abstractmethod
+    def get(self, name: str) -> Schema | None:
+        """
+        Return a single schema by name.
+
+        Args:
+            name (str): The schema name to look up.
+
+        Returns:
+            (Schema | None) The schema, or None if it does not exist.
+        """
+        pass
+
+    @abstractmethod
     def list(self) -> list[Schema]:
         """
         Return all defined schemas, ordered by name.
