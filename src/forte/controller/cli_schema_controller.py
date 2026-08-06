@@ -2,13 +2,15 @@ import click
 
 from forte.model.schema import SchemaError
 from forte.service.schema_service import SchemaService
+from forte.services.discovery import VaultNotFoundError
 
 
 class CliSchemaController:
     """
     CLI interface for SchemaService. Wires SchemaService operations up as a
     `schema` Click command group (add/list/remove), translating SchemaError
-    subclasses into Click errors. Contains no business logic of its own.
+    and VaultNotFoundError into Click errors. Contains no business logic of
+    its own.
     """
 
     def __init__(self, schema_service: SchemaService):
@@ -56,7 +58,7 @@ class CliSchemaController:
     def _add(self, name: str, fields: list[str]) -> None:
         try:
             created = self.schema_service.create_schema(name, fields)
-        except SchemaError as e:
+        except (SchemaError, VaultNotFoundError) as e:
             raise click.ClickException(str(e))
 
         field_names = [f.name for f in created.fields]
@@ -66,7 +68,11 @@ class CliSchemaController:
             click.echo(f"Added schema '{created.name}' (no fields)")
 
     def _list(self) -> None:
-        schemas = self.schema_service.list_schemas()
+        try:
+            schemas = self.schema_service.list_schemas()
+        except VaultNotFoundError as e:
+            raise click.ClickException(str(e))
+
         if not schemas:
             click.echo("No schemas defined yet.")
             return
@@ -85,7 +91,7 @@ class CliSchemaController:
 
         try:
             self.schema_service.remove_schema(name)
-        except SchemaError as e:
+        except (SchemaError, VaultNotFoundError) as e:
             raise click.ClickException(str(e))
 
         click.echo(f"Removed schema '{name}'.")

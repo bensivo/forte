@@ -84,4 +84,5 @@ Rules for how to organize code in this project, and on how differnet components 
             InputError: if either a or b is not a number
         """
     ```
+- NOTE: class __init__ functions don't need docstrings. It's obvious what they do
 - Each class should also start with a multiline doc string describing what is contained in that class, and what it does.
