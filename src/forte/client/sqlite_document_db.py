@@ -3,18 +3,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
-
 from forte.interface.document_db import IDocumentDb
 from forte.model.document import Document
+from forte.model.document_markdown import to_markdown
 from forte.model.vault import VaultContext, VaultLayout
-
-_NAME_KEY = "name"
-_SOURCE_PATH_KEY = "source_path"
-_CONTENT_HASH_KEY = "content_hash"
-_INGESTED_AT_KEY = "ingested_at"
-
-_FRONTMATTER_DELIM = "---"
 
 
 class SqliteDocumentDb(IDocumentDb):
@@ -136,7 +128,7 @@ class SqliteDocumentDb(IDocumentDb):
                 processed_path.parent.mkdir(parents=True, exist_ok=True)
                 processed_rel_path = self._rel_path(layout, processed_path)
                 processed_path.write_text(
-                    self._to_markdown(stored, extracted_text), encoding="utf-8"
+                    to_markdown(stored, extracted_text), encoding="utf-8"
                 )
 
                 stored.processed_path = processed_rel_path
@@ -176,6 +168,24 @@ class SqliteDocumentDb(IDocumentDb):
         if row is None:
             return None
         return self._row_to_document(row)
+
+    def read_processed(self, id: int) -> str | None:
+        layout = self._layout()
+        conn = sqlite3.connect(layout.db_path)
+        try:
+            row = conn.execute(
+                "SELECT processed_path FROM documents WHERE id = ?",
+                (id,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if row is None or row[0] is None:
+            return None
+        path = self._abs_path(layout, row[0])
+        if not path.exists():
+            return None
+        return path.read_text(encoding="utf-8")
 
     def remove(self, id: int) -> None:
         layout = self._layout()
@@ -222,25 +232,3 @@ class SqliteDocumentDb(IDocumentDb):
             processed_path=processed_path,
             id=doc_id,
         )
-
-    @staticmethod
-    def _to_markdown(document: Document, text: str) -> str:
-        """Render a processed document as a YAML-frontmatter markdown document."""
-        front: dict[str, object] = {
-            _NAME_KEY: document.name,
-            _SOURCE_PATH_KEY: document.source_path,
-            _CONTENT_HASH_KEY: document.content_hash,
-            _INGESTED_AT_KEY: document.ingested_at,
-        }
-
-        frontmatter = yaml.safe_dump(
-            front,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        )
-
-        body = text.strip()
-        if body:
-            return f"{_FRONTMATTER_DELIM}\n{frontmatter}{_FRONTMATTER_DELIM}\n\n{body}\n"
-        return f"{_FRONTMATTER_DELIM}\n{frontmatter}{_FRONTMATTER_DELIM}\n"

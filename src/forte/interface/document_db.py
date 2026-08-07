@@ -71,6 +71,21 @@ class IDocumentDb(ABC):
         pass
 
     @abstractmethod
+    def read_processed(self, id: int) -> str | None:
+        """
+        Return the raw contents of a document's processed markdown copy.
+
+        Args:
+            id (int): The document id whose processed copy to read.
+
+        Returns:
+            (str | None) The processed file's full text, or None if the
+                document does not exist, has no processed copy recorded, or
+                that copy is missing on disk.
+        """
+        pass
+
+    @abstractmethod
     def remove(self, id: int) -> None:
         """
         Delete a document, along with its raw and processed copies, by id.

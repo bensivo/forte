@@ -130,6 +130,14 @@ forte entity search <query> [--vault <name>]           Semantic search over enti
 forte doc ingest <path> [--yes] [--vault <name>]       Ingest a document; --yes auto-approves all changes
 forte doc list [--vault <name>]                        List ingested documents
 forte doc show <id> [--vault <name>]                   Show a document's contents and extracted entities
+forte doc link <doc_id> <entity_id> [--vault <name>]   Link a document to an entity
+forte doc unlink <doc_id> <entity_id> [--vault <name>] Unlink a document from an entity
+forte doc remove <id> [--yes] [--vault <name>]         Remove a document
+
+forte agent process <doc_id> [--yes] [--dry-run] [--interactive] [--vault <name>]
+                                                        Run the extraction/review/commit pipeline on a document
+forte agent ingest <path> [--yes] [--dry-run] [--interactive] [--vault <name>]
+                                                        Ingest a document and run the agent pipeline
 ```
 
 `--vault <name>` is available on every `schema`/`entity`/`doc`/`agent` group (applied at the group level, e.g. `forte doc --vault work ingest ./notes.md`). When omitted, commands operate on the default vault. See "Vault Discovery and the Registry" below.

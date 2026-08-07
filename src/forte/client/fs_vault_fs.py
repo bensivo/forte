@@ -4,17 +4,86 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forte.db.schema import initialize_database
+import sqlite3
+
 from forte.interface.vault_fs import IVaultFs
-from forte.services.config import write_default_config as _write_default_config
+
+# Starter contents of a new vault's `forte.yaml`. The API key is written as a
+# `${VAR}` reference so a committed config never contains a raw secret.
+_DEFAULT_CONFIG_CONTENT = (
+    "# Forte vault config.\n"
+    "model:\n"
+    "  extraction: claude-haiku-4-5\n"
+    "api_keys:\n"
+    "  anthropic: ${ANTHROPIC_API_KEY}\n"
+    "# editor: vim\n"
+)
+
+# DDL for a fresh vault index. The entity_embeddings table is intentionally
+# deferred until the embeddings decision lands.
+_DDL: list[str] = [
+    """
+    CREATE TABLE documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        source_path TEXT,
+        content_hash TEXT,
+        raw_path TEXT,
+        processed_path TEXT,
+        ingested_at TEXT,
+        status TEXT
+    )
+    """,
+    """
+    CREATE TABLE schemas (
+        name TEXT PRIMARY KEY,
+        fields_json TEXT
+    )
+    """,
+    """
+    CREATE TABLE entities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        schema TEXT,
+        name TEXT,
+        aliases_json TEXT,
+        fields_json TEXT,
+        file_path TEXT
+    )
+    """,
+    """
+    CREATE TABLE entity_field_values (
+        entity_id INTEGER,
+        field TEXT,
+        value TEXT,
+        source_doc_id INTEGER
+    )
+    """,
+    """
+    CREATE TABLE mentions (
+        doc_id INTEGER,
+        entity_id INTEGER,
+        quote TEXT,
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE ingest_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_id INTEGER,
+        kind TEXT,
+        payload_json TEXT,
+        status TEXT
+    )
+    """,
+]
 
 
 class LocalVaultFs(IVaultFs):
     """Concrete IVaultFs implementation backed by the local filesystem and SQLite.
 
     Uses the standard library `pathlib` for filesystem checks and directory
-    creation, and delegates config file and database creation to the
-    existing `forte.services.config` and `forte.db.schema` helpers.
+    creation, writes the starter `forte.yaml`, and bootstraps a fresh SQLite
+    index with the MVP schema.
     """
 
     def exists(self, path: Path) -> bool:
@@ -56,7 +125,9 @@ class LocalVaultFs(IVaultFs):
         Raises:
             FileExistsError: if `path` already exists.
         """
-        _write_default_config(path)
+        if path.exists():
+            raise FileExistsError(f"Config file already exists: {path}")
+        path.write_text(_DEFAULT_CONFIG_CONTENT, encoding="utf-8")
 
     def init_db(self, path: Path) -> None:
         """Create a fresh SQLite database with the MVP schema at `path`.
@@ -70,4 +141,13 @@ class LocalVaultFs(IVaultFs):
         Raises:
             FileExistsError: if `path` already exists.
         """
-        initialize_database(path)
+        if path.exists():
+            raise FileExistsError(f"Database file already exists at {path}")
+
+        conn = sqlite3.connect(path)
+        try:
+            with conn:
+                for stmt in _DDL:
+                    conn.execute(stmt)
+        finally:
+            conn.close()

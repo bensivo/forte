@@ -64,3 +64,7 @@ class DocumentNotFoundError(DocumentError):
 
 class SourceFileNotFoundError(DocumentError):
     """Raised when the source path given to ``ingest_document`` does not exist."""
+
+
+class UnsupportedFileTypeError(DocumentError):
+    """Raised when a document's file extension has no text extractor."""

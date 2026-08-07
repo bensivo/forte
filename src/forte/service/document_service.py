@@ -11,8 +11,9 @@ from forte.model.document import (
     SourceFileNotFoundError,
     compute_content_hash,
 )
-from forte.model.entity import EntityNotFoundError
-from forte.services.text_extraction import extract_text
+from forte.model.document_markdown import from_markdown
+from forte.model.entity import Entity, EntityNotFoundError
+from forte.service.text_extraction import extract_text
 
 
 def _normalize_source_path(path: Path) -> str:
@@ -76,7 +77,7 @@ class DocumentService:
         Raises:
             SourceFileNotFoundError: if ``path`` does not exist.
             UnsupportedFileTypeError: if the file's extension is not
-                supported by :func:`forte.services.text_extraction.extract_text`
+                supported by :func:`forte.service.text_extraction.extract_text`
                 (propagated as-is, not wrapped).
         """
         if not path.exists():
@@ -124,6 +125,65 @@ class DocumentService:
         if document is None:
             raise DocumentNotFoundError(f"Document #{id} does not exist.")
         return document
+
+    def get_document_text(self, id: int) -> str:
+        """
+        Return the extracted plain-text body of a document.
+
+        Reads the document's processed markdown copy and returns just its
+        body (the frontmatter metadata is dropped). A document with no
+        processed copy — or whose processed copy is missing on disk —
+        yields an empty string rather than an error, so callers that only
+        want text can treat "nothing extracted" and "nothing stored" alike.
+
+        Args:
+            id (int): The document id whose text to read.
+
+        Returns:
+            (str) The document's extracted plain text, possibly empty.
+
+        Raises:
+            DocumentNotFoundError: if no document with that id exists.
+            ValueError: if the processed copy exists but is not a valid
+                frontmatter markdown document (propagated from
+                :func:`forte.model.document_markdown.from_markdown`).
+        """
+        document = self.get_document(id)
+        if not document.processed_path:
+            return ""
+
+        text = self.document_db.read_processed(id)
+        if text is None:
+            return ""
+        return from_markdown(text).body
+
+    def list_linked_entities(self, id: int) -> list[Entity]:
+        """
+        Return the entities a document is linked to, ordered by entity id.
+
+        Reads the document's mentions and resolves each one to its entity.
+        A mention pointing at an entity that no longer exists is skipped
+        rather than raising, so a stale row can never make ``doc show``
+        fail.
+
+        Args:
+            id (int): The document id whose linked entities to list.
+
+        Returns:
+            (list[Entity]) The linked entities, ordered by entity id.
+
+        Raises:
+            DocumentNotFoundError: if no document with that id exists.
+        """
+        if self.document_db.get(id) is None:
+            raise DocumentNotFoundError(f"Document #{id} does not exist.")
+
+        entities: list[Entity] = []
+        for mention in self.mention_db.list_for_doc(id):
+            entity = self.entity_db.get(mention.entity_id)
+            if entity is not None:
+                entities.append(entity)
+        return sorted(entities, key=lambda e: e.id or 0)
 
     def link_document(self, doc_id: int, entity_id: int, quote: str = "") -> None:
         """

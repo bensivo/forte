@@ -15,6 +15,7 @@ from forte.model.document import (
     SourceFileNotFoundError,
     compute_content_hash,
 )
+from forte.model.document_markdown import to_markdown
 from forte.model.entity import Entity, EntityNotFoundError
 from forte.service.document_service import DocumentService
 from forte.services.text_extraction import UnsupportedFileTypeError
@@ -23,6 +24,7 @@ from forte.services.text_extraction import UnsupportedFileTypeError
 class FakeDocumentDb(IDocumentDb):
     def __init__(self):
         self._docs: dict[int, Document] = {}
+        self._processed: dict[int, str] = {}
         self._next_id = 1
 
     def find_by_identity(self, source_path: str, content_hash: str) -> Document | None:
@@ -47,6 +49,7 @@ class FakeDocumentDb(IDocumentDb):
             id=doc_id,
         )
         self._docs[doc_id] = stored
+        self._processed[doc_id] = to_markdown(stored, extracted_text)
         return stored
 
     def list(self) -> list[Document]:
@@ -55,8 +58,12 @@ class FakeDocumentDb(IDocumentDb):
     def get(self, id: int) -> Document | None:
         return self._docs.get(id)
 
+    def read_processed(self, id: int) -> str | None:
+        return self._processed.get(id)
+
     def remove(self, id: int) -> None:
         self._docs.pop(id, None)
+        self._processed.pop(id, None)
 
 
 class FakeMentionDb(IMentionDb):
@@ -195,6 +202,37 @@ def test_get_document_not_found() -> None:
     service, _ = _service()
     with pytest.raises(DocumentNotFoundError):
         service.get_document(999)
+
+
+# --- get_document_text --------------------------------------------------------
+
+
+def test_get_document_text_returns_extracted_body(tmp_path: Path) -> None:
+    service, _ = _service()
+    src = _write(tmp_path / "kickoff.md", "# Kickoff\n\nAda Lovelace was there.")
+    doc = service.ingest_document(src)
+
+    text = service.get_document_text(doc.id)
+
+    assert "Ada Lovelace was there." in text
+    # frontmatter metadata is not part of the body
+    assert "content_hash" not in text
+
+
+def test_get_document_text_not_found() -> None:
+    service, _ = _service()
+    with pytest.raises(DocumentNotFoundError):
+        service.get_document_text(999)
+
+
+def test_get_document_text_missing_processed_copy_is_empty(tmp_path: Path) -> None:
+    service, _ = _service()
+    src = _write(tmp_path / "kickoff.md", "hello world")
+    doc = service.ingest_document(src)
+    # simulate a processed copy that is recorded but absent on disk
+    service.document_db._processed.pop(doc.id)
+
+    assert service.get_document_text(doc.id) == ""
 
 
 # --- link_document / unlink_document ------------------------------------------

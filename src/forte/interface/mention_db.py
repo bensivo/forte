@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+from forte.model.mention import Mention
+
 
 class IMentionDb(ABC):
     """
@@ -35,6 +37,19 @@ class IMentionDb(ABC):
 
         Returns:
             None
+        """
+        pass
+
+    @abstractmethod
+    def list_for_doc(self, doc_id: int) -> list[Mention]:
+        """
+        Return every mention row belonging to a document.
+
+        Args:
+            doc_id (int): The document id whose mentions to read.
+
+        Returns:
+            (list[Mention]) The document's mentions, ordered by entity id.
         """
         pass
 

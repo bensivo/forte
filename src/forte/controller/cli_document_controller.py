@@ -162,6 +162,8 @@ class CliDocumentController:
         try:
             self._select_vault(vault_name)
             document = self.document_service.get_document(id)
+            body = self.document_service.get_document_text(id)
+            linked = self.document_service.list_linked_entities(id)
         except (DocumentError, VaultError) as e:
             raise click.ClickException(str(e))
 
@@ -169,6 +171,18 @@ class CliDocumentController:
         click.echo(f"Source: {document.source_path}")
         click.echo(f"Ingested: {document.ingested_at}")
         click.echo(f"Status: {document.status}")
+
+        if body:
+            click.echo("")
+            click.echo(body)
+
+        click.echo("")
+        if linked:
+            click.echo("Mentions:")
+            for entity in linked:
+                click.echo(f"  entity #{entity.id} [{entity.schema}] {entity.name}")
+        else:
+            click.echo("Mentions: (none)")
 
     def _link(self, id: int, entity_id: int, vault_name: str | None) -> None:
         try:

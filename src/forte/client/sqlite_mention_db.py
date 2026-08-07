@@ -2,6 +2,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 from forte.interface.mention_db import IMentionDb
+from forte.model.mention import Mention
 from forte.model.vault import VaultContext, VaultLayout
 
 
@@ -56,6 +57,22 @@ class SqliteMentionDb(IMentionDb):
                 )
         finally:
             conn.close()
+
+    def list_for_doc(self, doc_id: int) -> list[Mention]:
+        layout = self._layout()
+        conn = sqlite3.connect(layout.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT doc_id, entity_id, quote, created_at FROM mentions "
+                "WHERE doc_id = ? ORDER BY entity_id",
+                (doc_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [
+            Mention(doc_id=r[0], entity_id=r[1], quote=r[2] or "", created_at=r[3] or "")
+            for r in rows
+        ]
 
     def remove(self, doc_id: int, entity_id: int) -> None:
         layout = self._layout()

@@ -9,12 +9,16 @@ from forte.client.sqlite_document_db import SqliteDocumentDb
 from forte.client.sqlite_entity_db import SqliteEntityDb
 from forte.client.sqlite_mention_db import SqliteMentionDb
 from forte.client.sqlite_schema_db import SqliteSchemaDb
+from forte.client.yaml_config_store import YamlConfigStore
 from forte.client.yaml_vault_registry import YamlVaultRegistry
+from forte.controller.cli_agent_controller import CliAgentController
 from forte.controller.cli_document_controller import CliDocumentController
 from forte.controller.cli_entity_controller import CliEntityController
 from forte.controller.cli_schema_controller import CliSchemaController
 from forte.controller.cli_vault_controller import CliVaultController
 from forte.model.vault import VaultContext
+from forte.service.agent_service import AgentService
+from forte.service.config_service import ConfigService
 from forte.service.document_service import DocumentService
 from forte.service.entity_service import EntityService
 from forte.service.schema_service import SchemaService
@@ -59,6 +63,26 @@ mention_db = SqliteMentionDb(vault_context)
 document_service = DocumentService(document_db, mention_db, entity_db)
 document_controller = CliDocumentController(document_service, vault_service, vault_context)
 main.add_command(document_controller.group())
+
+# Add the 'agent' sub-commands.
+#
+# The LLM client is deliberately NOT built here: constructing it needs an API
+# key and a selected vault, and neither exists at wiring time. CliAgentController
+# builds it lazily per invocation (its `_build_llm_client` seam) and installs it
+# on the AgentService just before a run, so a vault-less or key-less invocation
+# fails with a clean message instead of at import.
+config_service = ConfigService(YamlConfigStore(vault_context))
+agent_service = AgentService(
+    None,  # type: ignore[arg-type]  # installed per-invocation by CliAgentController
+    config_service,
+    document_service,
+    entity_service,
+    schema_service,
+)
+agent_controller = CliAgentController(
+    agent_service, document_service, config_service, vault_service, vault_context
+)
+main.add_command(agent_controller.group())
 
 
 if __name__ == "__main__":
