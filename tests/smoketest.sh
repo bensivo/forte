@@ -6,7 +6,8 @@
 # Create a temp directory, and initialize a forte vault in it
 root_dir=`mktemp -d`
 pushd $root_dir
-forte init
+forte vault create smoketest $root_dir
+forte vault set-default smoketest
 
 # Create 2 schemas
 forte schema add person --field title --field company --field email

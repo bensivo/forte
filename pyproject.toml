@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-forte = "forte.cli:main"
+forte = "forte.main:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -13,7 +13,8 @@ fixtures_dir="$script_dir/fixtures/e2e_meeting_notes"
 # Create a temp directory, and initialize a forte vault in it
 root_dir=`mktemp -d`
 pushd $root_dir
-forte init
+forte vault create smoketest-agent $root_dir
+forte vault set-default smoketest-agent
 
 forte schema add project
 forte schema add person
