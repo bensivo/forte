@@ -9,11 +9,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 # Resolve the CLI from the same virtualenv running pytest, so the test does
 # not depend on `forte` being on the ambient PATH.
 FORTE_BIN = Path(sys.executable).parent / "forte"
+
+SOURCE_TEXT = "# Kickoff\n\nWe met today.\n"
 
 
 def forte(args, home):
@@ -41,7 +41,7 @@ def a_vault(tmp_path):
     return home, vault_dir
 
 
-def a_source_file(tmp_path, name="notes.md", content="# Kickoff\n\nWe met today.\n"):
+def a_source_file(tmp_path, name="notes.md", content=SOURCE_TEXT):
     """Write a source document somewhere outside the vault, as a user would
     have it sitting on their own disk before ingesting."""
     source_dir = tmp_path / "source"
@@ -52,107 +52,208 @@ def a_source_file(tmp_path, name="notes.md", content="# Kickoff\n\nWe met today.
 
 
 # Scenario: ingest a document
-@pytest.mark.skip(reason="TODO: implement")
 def test_ingest_a_document(tmp_path):
     # Given: a vault, and a markdown file on disk outside the vault
+    home, _ = a_vault(tmp_path)
+    source = a_source_file(tmp_path)
+
     # When: the user runs `forte doc ingest <path>`
+    result = forte(f"doc ingest {source}", home)
+
     # Then: the process exits with status code 0
+    assert result.returncode == 0, result.stderr
+
     # Then: the output reports the new doc's id and name
+    assert "Ingested doc #1: notes.md" in result.stdout
+
     # Then: the doc appears in `forte doc list`
-    ...
+    assert "#1  notes.md" in forte("doc list", home).stdout
 
 
 # Scenario: ingesting a document copies it into the vault
-@pytest.mark.skip(reason="TODO: implement")
 def test_ingesting_a_document_copies_it_into_the_vault(tmp_path):
     # Given: a vault, and a markdown file on disk outside the vault
+    home, vault_dir = a_vault(tmp_path)
+    source = a_source_file(tmp_path)
+
     # When: the user runs `forte doc ingest <path>`
+    result = forte(f"doc ingest {source}", home)
+    assert result.returncode == 0, result.stderr
+
     # Then: a copy exists under `docs/raw/`, byte-for-byte identical to the source
+    raw = vault_dir / "docs" / "raw" / "notes.md"
+    assert raw.is_file()
+    assert raw.read_bytes() == source.read_bytes()
+
     # Then: a copy exists under `docs/processed/`, with YAML frontmatter prepended
+    processed = vault_dir / "docs" / "processed" / "1.md"
+    assert processed.is_file()
+    processed_text = processed.read_text()
+    assert processed_text.startswith("---\n")
+    assert f"source_path: {source}" in processed_text
+    assert "content_hash:" in processed_text
+    assert "ingested_at:" in processed_text
+
     # Then: the processed copy's body still contains the source text
+    assert SOURCE_TEXT in processed_text
+
     # Then: the original file on the user's disk is untouched
-    ...
+    assert source.read_text() == SOURCE_TEXT
 
 
 # Scenario: ingest a document with an explicit name
-@pytest.mark.skip(reason="TODO: implement")
 def test_ingest_a_document_with_an_explicit_name(tmp_path):
     # Given: a vault, and a markdown file on disk outside the vault
+    home, _ = a_vault(tmp_path)
+    source = a_source_file(tmp_path)
+
     # When: the user runs `forte doc ingest <path> --name "Kickoff Notes"`
+    result = forte(f'doc ingest {source} --name "Kickoff Notes"', home)
+
     # Then: the process exits with status code 0
+    assert result.returncode == 0, result.stderr
+
     # Then: `forte doc list` shows the doc under that name, not the filename
-    ...
+    listed = forte("doc list", home)
+    assert "#1  Kickoff Notes" in listed.stdout
+    assert "notes.md" not in listed.stdout
 
 
 # Scenario: ingest a document that does not exist
-@pytest.mark.skip(reason="TODO: implement")
 def test_ingest_a_document_that_does_not_exist(tmp_path):
     # Given: a vault, and a path that points at no file
+    home, _ = a_vault(tmp_path)
+    missing = tmp_path / "source" / "missing.md"
+
     # When: the user runs `forte doc ingest <path>`
+    result = forte(f"doc ingest {missing}", home)
+
     # Then: we get an error
+    assert result.returncode != 0
+    assert "Source file not found" in result.stderr
+
     # Then: no doc is registered — `forte doc list` is still empty
-    ...
+    assert "No documents yet." in forte("doc list", home).stdout
 
 
 # Scenario: list documents
-@pytest.mark.skip(reason="TODO: implement")
 def test_list_documents(tmp_path):
     # Given: a vault with two ingested docs
+    home, _ = a_vault(tmp_path)
+    first = a_source_file(tmp_path, "notes.md")
+    second = a_source_file(tmp_path, "other.md", "Another doc.\n")
+    assert forte(f"doc ingest {first}", home).returncode == 0
+    assert forte(f"doc ingest {second}", home).returncode == 0
+
     # When: the user runs `forte doc list`
+    result = forte("doc list", home)
+
     # Then: the process exits with status code 0
+    assert result.returncode == 0, result.stderr
+
     # Then: the output shows both docs, with their ids and names
-    ...
+    assert "#1  notes.md" in result.stdout
+    assert "#2  other.md" in result.stdout
 
 
 # Scenario: list documents in an empty vault
-@pytest.mark.skip(reason="TODO: implement")
 def test_list_documents_in_an_empty_vault(tmp_path):
     # Given: a vault with no ingested docs
+    home, _ = a_vault(tmp_path)
+
     # When: the user runs `forte doc list`
+    result = forte("doc list", home)
+
     # Then: the process exits with status code 0
+    assert result.returncode == 0, result.stderr
+
     # Then: the output says there are no documents yet
-    ...
+    assert "No documents yet." in result.stdout
 
 
 # Scenario: show a document
-@pytest.mark.skip(reason="TODO: implement")
 def test_show_a_document(tmp_path):
     # Given: a vault with one ingested doc
+    home, _ = a_vault(tmp_path)
+    source = a_source_file(tmp_path)
+    assert forte(f"doc ingest {source}", home).returncode == 0
+
     # When: the user runs `forte doc show <id>`
+    result = forte("doc show 1", home)
+
     # Then: the process exits with status code 0
+    assert result.returncode == 0, result.stderr
+
     # Then: the output shows the doc's id, name, source path, ingest time, and status
+    assert "#1 notes.md" in result.stdout
+    assert f"Source: {source}" in result.stdout
+    assert "Ingested: " in result.stdout
+    assert "Status: ingested" in result.stdout
+
     # Then: the output shows the doc's text body
+    assert "# Kickoff" in result.stdout
+    assert "We met today." in result.stdout
+
     # Then: the output shows a Mentions section, empty for a doc with no links
-    ...
+    assert "Mentions: (none)" in result.stdout
 
 
 # Scenario: show a document that does not exist
-@pytest.mark.skip(reason="TODO: implement")
 def test_show_a_document_that_does_not_exist(tmp_path):
     # Given: a vault with no ingested docs
+    home, _ = a_vault(tmp_path)
+
     # When: the user runs `forte doc show 999`
+    result = forte("doc show 999", home)
+
     # Then: we get an error
-    ...
+    assert result.returncode != 0
+    assert "Document #999 does not exist." in result.stderr
 
 
 # Scenario: remove a document
-@pytest.mark.skip(reason="TODO: implement")
 def test_remove_a_document(tmp_path):
     # Given: a vault with two ingested docs
+    home, vault_dir = a_vault(tmp_path)
+    first = a_source_file(tmp_path, "notes.md")
+    second = a_source_file(tmp_path, "other.md", "Another doc.\n")
+    assert forte(f"doc ingest {first}", home).returncode == 0
+    assert forte(f"doc ingest {second}", home).returncode == 0
+
     # When: the user runs `forte doc remove <id> -y`
+    result = forte("doc remove 1 -y", home)
+
     # Then: the process exits with status code 0
+    assert result.returncode == 0, result.stderr
+    assert "Removed doc #1: notes.md" in result.stdout
+
     # Then: `forte doc list` no longer shows that doc
+    listed = forte("doc list", home)
+    assert "notes.md" not in listed.stdout
+
     # Then: `forte doc list` still shows the other doc
+    assert "#2  other.md" in listed.stdout
+
     # Then: the doc's raw and processed copies are gone from the vault
+    assert not (vault_dir / "docs" / "raw" / "notes.md").exists()
+    assert not (vault_dir / "docs" / "processed" / "1.md").exists()
+
     # Then: the other doc's copies are still on disk
+    assert (vault_dir / "docs" / "raw" / "other.md").is_file()
+    assert (vault_dir / "docs" / "processed" / "2.md").is_file()
+
     # Then: the original file on the user's disk is untouched
-    ...
+    assert first.read_text() == SOURCE_TEXT
 
 
 # Scenario: remove a document that does not exist
-@pytest.mark.skip(reason="TODO: implement")
 def test_remove_a_document_that_does_not_exist(tmp_path):
     # Given: a vault with no ingested docs
+    home, _ = a_vault(tmp_path)
+
     # When: the user runs `forte doc remove 999 -y`
+    result = forte("doc remove 999 -y", home)
+
     # Then: we get an error
-    ...
+    assert result.returncode != 0
+    assert "Document #999 does not exist." in result.stderr
