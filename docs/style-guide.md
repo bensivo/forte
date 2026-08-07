@@ -74,6 +74,44 @@ Rules for how to organize code in this project, and on how differnet components 
 - Each client should focus on 1 external dependency to implement the interface. If multiple are needed, likely the interface is too high-level or too broad. 
 - Name clients `<technology/dependency><Interface>` e.g. `IConfigProvider` -> `DotenvConfigProvider`
 
+## Writing e2e tests
+- We simply use pytest for e2e testing in this project, in the `tests/e2e` directory
+- Use pytests's "tmp_path" variable to create a new directory for each test, and pass in a HOME env var to simulate user home
+- Use gherkin-syntax comments to explain the test blocks
+- ONLY assert on things that a user could see themselves, not internal implementation details (which are probably better covered by unit tests)
+- Example e2e test
+  ```
+    # Resolve the CLI from the same virtualenv running pytest, so the test does
+    # not depend on `forte` being on the ambient PATH.
+    FORTE_BIN = Path(sys.executable).parent / "forte"
+
+    def forte(args, home):
+        return subprocess.run(
+            [str(FORTE_BIN), *shlex.split(args)],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "HOME": str(home)},
+        )
+
+    # Scenario: create a new vault
+    def test_vault_create(tmp_path):
+        # Given: a user home, and vault directory with no existing vault
+        home = tmp_path / "home"  # Forte writes configs to the user home - this is our fake user home for the test case
+        vault_dir = tmp_path / "vault"
+        home.mkdir()
+        vault_dir.mkdir()
+
+        # When: the user runs `forte vault create <name> <dir>`
+        result = forte(f"vault create testvault {vault_dir}", home)
+
+        # Then: the process exits with status code 0
+        assert result.returncode == 0, result.stderr
+
+        # Then: the directory contains a `forte.yaml` and `forte.db` file
+        assert (vault_dir / "forte.yaml").is_file()
+        assert (vault_dir / "forte.db").is_file()
+    ```
+
 
 ## Python style conventions
 - Each function should start with a google-style doc-string:
@@ -101,3 +139,5 @@ Rules for how to organize code in this project, and on how differnet components 
 - Each feature defines its exceptions in its `model/` file (not in `service/`), as one base error class per feature plus specific subclasses. E.g. `model/schema.py` defines `SchemaError` and subclasses `InvalidSchemaError`, `SchemaExistsError`, `SchemaNotFoundError`, `SchemaInUseError`.
 - The base class's docstring is just `"""Base class for <feature> errors."""`; each subclass's docstring states the one condition that raises it.
 - Only services raise these exceptions; clients and interfaces don't.
+
+
