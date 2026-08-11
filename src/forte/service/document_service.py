@@ -3,11 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from forte.interface.document_db import IDocumentDb
+from forte.interface.editor import IEditor
 from forte.interface.entity_db import IEntityDb
 from forte.interface.mention_db import IMentionDb
 from forte.model.document import (
     Document,
     DocumentNotFoundError,
+    EmptyDocumentError,
+    InvalidDocumentNameError,
     SourceFileNotFoundError,
     compute_content_hash,
 )
@@ -40,19 +43,34 @@ class DocumentService:
     or writing a duplicate. ``link_document`` on an already-linked pair, and
     ``unlink_document`` on a not-linked pair, are also no-ops that succeed
     silently.
+
+    ``create_document`` (pasted/typed documents) deliberately has no such
+    dedup check: ``find_by_identity`` keys off a real source path, which a
+    pasted document doesn't have, and a user pasting the same note twice is
+    more likely intentional than accidental. Two calls to ``create_document``
+    with the same name and the same content produce two distinct documents.
     """
 
-    def __init__(self, document_db: IDocumentDb, mention_db: IMentionDb, entity_db: IEntityDb):
+    def __init__(
+        self,
+        document_db: IDocumentDb,
+        mention_db: IMentionDb,
+        entity_db: IEntityDb,
+        editor: IEditor,
+    ):
         """
         Args:
             document_db (IDocumentDb): Storage backend for document persistence.
             mention_db (IMentionDb): Storage backend for doc-entity mention links.
             entity_db (IEntityDb): Storage backend used to check that a
                 referenced entity exists when linking/unlinking.
+            editor (IEditor): Editing session used by ``create_document`` to
+                collect a new document's text from the user.
         """
         self.document_db = document_db
         self.mention_db = mention_db
         self.entity_db = entity_db
+        self.editor = editor
 
     def ingest_document(self, path: Path, name: str | None = None) -> Document:
         """
@@ -98,6 +116,42 @@ class DocumentService:
         return self.document_db.add(
             Path(normalized_source_path), content_hash, extracted_text, doc_name
         )
+
+    def create_document(self, name: str) -> Document:
+        """
+        Create a new document from text typed/pasted by the user, rather
+        than ingested from an existing file.
+
+        Opens an empty editing session via the injected ``IEditor``, then
+        persists the text the user wrote as a new document named ``name``.
+        Unlike ``ingest_document``, there is no identity/dedup check: two
+        calls with the same ``name`` and the same resulting text produce two
+        separate documents (see the class docstring for why).
+
+        Args:
+            name (str): Human-readable label for the document.
+
+        Returns:
+            (Document) The newly created document, with its assigned id.
+
+        Raises:
+            InvalidDocumentNameError: if ``name`` is empty or whitespace-only.
+            EditorAbortedError: if the editing session is aborted (propagated
+                unchanged from the injected ``IEditor``); nothing has been
+                written at this point.
+            EmptyDocumentError: if the text returned from the editor is empty
+                or whitespace-only.
+        """
+        if not name.strip():
+            raise InvalidDocumentNameError("Document name must not be empty.")
+
+        text = self.editor.edit("")
+
+        if not text.strip():
+            raise EmptyDocumentError("Document text must not be empty.")
+
+        content_hash = compute_content_hash(text.encode("utf-8"))
+        return self.document_db.add_text(name, content_hash, text)
 
     def list_documents(self) -> list[Document]:
         """

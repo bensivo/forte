@@ -11,8 +11,8 @@ This module is the pure serialize/parse core of that format. It has NO
 Click, Rich, filesystem, or DB imports -- ``render`` takes a list of
 in-memory :data:`ProposedChange` and returns a ``str``; ``parse`` takes that
 ``str`` (possibly hand-edited) back to a ``list[Decision]``. The actual
-editor subprocess is a separate boundary (``_editor.py`` and its
-concrete implementation in the controller layer).
+editor subprocess is a separate boundary (`forte.interface.editor.IEditor`
+and its concrete implementation in the client layer).
 
 Change-id scheme
 -----------------

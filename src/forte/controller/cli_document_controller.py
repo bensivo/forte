@@ -3,6 +3,7 @@ from pathlib import Path
 import click
 
 from forte.model.document import DocumentError
+from forte.model.editor import EditorError
 from forte.model.entity import EntityError
 from forte.model.vault import VaultContext, VaultError
 from forte.service.document_service import DocumentService
@@ -23,7 +24,7 @@ def _vault_option(f):
 class CliDocumentController:
     """
     CLI interface for DocumentService. Wires DocumentService operations up as
-    a `doc` Click command group (ingest/list/show/link/unlink/remove),
+    a `doc` Click command group (ingest/create/list/show/link/unlink/remove),
     translating DocumentError, EntityError, and VaultError into Click errors.
     Contains no business logic of its own.
 
@@ -77,6 +78,19 @@ class CliDocumentController:
         def doc_ingest(path: str, name: str | None, vault_name: str | None) -> None:
             """Ingest the file at PATH into the vault."""
             controller._ingest(path, name, vault_name)
+
+        @doc.command("create")
+        @click.argument("name")
+        @_vault_option
+        def doc_create(name: str, vault_name: str | None) -> None:
+            """Create a new document named NAME by typing/pasting its text.
+
+            Opens your editor ($VISUAL, then $EDITOR, then the vault's
+            configured editor, falling back to vi/nano) on an empty buffer.
+            Paste or type the document's contents, save, and close the
+            editor to store it as a new document.
+            """
+            controller._create(name, vault_name)
 
         @doc.command("list")
         @_vault_option
@@ -143,6 +157,15 @@ class CliDocumentController:
             raise click.ClickException(str(e))
 
         click.echo(f"Ingested doc #{document.id}: {document.name}")
+
+    def _create(self, name: str, vault_name: str | None) -> None:
+        try:
+            self._select_vault(vault_name)
+            document = self.document_service.create_document(name)
+        except (DocumentError, EditorError, VaultError) as e:
+            raise click.ClickException(str(e))
+
+        click.echo(f"Created doc #{document.id}: {document.name}")
 
     def _list(self, vault_name: str | None) -> None:
         try:

@@ -1,3 +1,4 @@
+import re
 import shutil
 import sqlite3
 from datetime import datetime, timezone
@@ -7,6 +8,11 @@ from forte.interface.document_db import IDocumentDb
 from forte.model.document import Document
 from forte.model.document_markdown import to_markdown
 from forte.model.vault import VaultContext, VaultLayout
+
+# Characters allowed in a slugified raw filename derived from a free-form
+# document name; anything else (including path separators) is dropped so a
+# pasted doc's name can never escape docs/raw/.
+_SLUG_DISALLOWED_CHARS_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
 class SqliteDocumentDb(IDocumentDb):
@@ -91,6 +97,45 @@ class SqliteDocumentDb(IDocumentDb):
         shutil.copy2(source_path, raw_path)
         raw_rel_path = self._rel_path(layout, raw_path)
 
+        return self._insert_document(
+            layout, name, str(source_path), content_hash, raw_rel_path, extracted_text
+        )
+
+    def add_text(self, name: str, content_hash: str, text: str) -> Document:
+        layout = self._layout()
+        raw_path = self._resolve_raw_path(layout, f"{self._slugify(name)}.md")
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_text(text, encoding="utf-8")
+        raw_rel_path = self._rel_path(layout, raw_path)
+
+        return self._insert_document(
+            layout, name, "(created)", content_hash, raw_rel_path, text
+        )
+
+    def _slugify(self, name: str) -> str:
+        """Reduce a free-form document name to a safe raw-filename stem.
+
+        Strips anything but letters, digits, ``.``, ``_``, and ``-`` (so no
+        path separators or ``..`` traversal can reach ``docs/raw/``), and
+        falls back to a fixed stem if nothing usable remains.
+        """
+        slug = _SLUG_DISALLOWED_CHARS_RE.sub("-", name).strip("-._")
+        return slug or "document"
+
+    def _insert_document(
+        self,
+        layout: VaultLayout,
+        name: str,
+        source_path: str,
+        content_hash: str,
+        raw_rel_path: str,
+        text: str,
+    ) -> Document:
+        """Insert the ``documents`` row and write the processed copy.
+
+        Shared tail of ``add``/``add_text``: both have already written the
+        raw copy and resolved its vault-relative path by this point.
+        """
         ingested_at = datetime.now(timezone.utc).isoformat()
         status = "ingested"
 
@@ -103,7 +148,7 @@ class SqliteDocumentDb(IDocumentDb):
                     "ingested_at, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         name,
-                        str(source_path),
+                        source_path,
                         content_hash,
                         raw_rel_path,
                         None,
@@ -115,7 +160,7 @@ class SqliteDocumentDb(IDocumentDb):
 
                 stored = Document(
                     name=name,
-                    source_path=str(source_path),
+                    source_path=source_path,
                     content_hash=content_hash,
                     ingested_at=ingested_at,
                     status=status,
@@ -127,9 +172,7 @@ class SqliteDocumentDb(IDocumentDb):
                 processed_path = layout.docs_processed_dir / f"{doc_id}.md"
                 processed_path.parent.mkdir(parents=True, exist_ok=True)
                 processed_rel_path = self._rel_path(layout, processed_path)
-                processed_path.write_text(
-                    to_markdown(stored, extracted_text), encoding="utf-8"
-                )
+                processed_path.write_text(to_markdown(stored, text), encoding="utf-8")
 
                 stored.processed_path = processed_rel_path
 

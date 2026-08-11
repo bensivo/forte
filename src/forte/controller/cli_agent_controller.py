@@ -4,7 +4,7 @@ import click
 
 from forte.client.anthropic_llm_client import AnthropicLlmClient
 from forte.controller.interactive_reviewer import InteractiveReviewer
-from forte.controller.terminal_editor import TerminalEditorSession
+from forte.interface.editor import IEditor
 from forte.interface.llm_client import ILlmClient
 from forte.model.agent import (
     AgentError,
@@ -15,7 +15,7 @@ from forte.model.agent import (
 from forte.model.config import ConfigError
 from forte.model.document import DocumentError
 from forte.model.vault import VaultContext, VaultError
-from forte.service.agent_service import AgentService, AutoApproveReviewer, EditorSession
+from forte.service.agent_service import AgentService, AutoApproveReviewer
 from forte.service.config_service import ConfigService
 from forte.service.document_service import DocumentService
 from forte.service.vault_service import VaultService
@@ -60,15 +60,17 @@ class CliAgentController:
     happens, so no config is read and no LLM client is built (let alone
     called) when the vault cannot be resolved.
 
-    Construction seams: the real LLM client and the real terminal editor are
-    built by `_build_llm_client` / `_build_editor_session`, lazily, per
-    invocation. Both are methods so tests can monkeypatch them on the
-    controller instance and keep the suite deterministic, free of API keys,
-    and free of spawned editors. The LLM client is built up front (before the
-    service is called) rather than behind a lazy proxy so that a missing API
-    key fails fast with a clean message instead of surfacing from inside a
-    retry loop, and it is installed on the injected AgentService — whose
-    `llm_client` is read per call — right before the run.
+    Construction seams: the real LLM client is built by `_build_llm_client`,
+    lazily, per invocation -- a method so tests can monkeypatch it on the
+    controller instance and keep the suite deterministic and free of API
+    keys. The LLM client is built up front (before the service is called)
+    rather than behind a lazy proxy so that a missing API key fails fast with
+    a clean message instead of surfacing from inside a retry loop, and it is
+    installed on the injected AgentService — whose `llm_client` is read per
+    call — right before the run. The `IEditor` used by the bulk flow is NOT
+    built here: it is a single instance constructed once in `main.py` and
+    injected into this controller, since it has no wiring-time vault or
+    config dependency to resolve lazily.
     """
 
     def __init__(
@@ -78,6 +80,7 @@ class CliAgentController:
         config_service: ConfigService,
         vault_service: VaultService,
         vault_context: VaultContext,
+        editor: IEditor,
     ):
         """
         Args:
@@ -86,18 +89,20 @@ class CliAgentController:
             document_service (DocumentService): Used by `agent ingest` to
                 ingest the file before the pipeline runs against it.
             config_service (ConfigService): Supplies the extraction model and
-                API key the LLM client is built from, and backs the editor
-                session's editor resolution.
+                API key the LLM client is built from.
             vault_service (VaultService): The service used to resolve which
                 vault a subcommand operates on.
             vault_context (VaultContext): The shared context the resolved
                 vault root is written to before each service call.
+            editor (IEditor): The single-pass review seam for the default
+                bulk flow.
         """
         self.agent_service = agent_service
         self.document_service = document_service
         self.config_service = config_service
         self.vault_service = vault_service
         self.vault_context = vault_context
+        self.editor = editor
 
     def group(self) -> click.Group:
         """
@@ -178,20 +183,6 @@ class CliAgentController:
             api_key=self.config_service.require_api_key(),
         )
 
-    def _build_editor_session(self) -> EditorSession:
-        """
-        Construct the real editor session from the active vault's config.
-
-        This is a construction seam: tests monkeypatch it to return a stub
-        EditorSession whose `edit` is a scripted `str -> str` function, so the
-        suite never spawns a real editor. Production code always gets a real
-        TerminalEditorSession here.
-
-        Returns:
-            (EditorSession) The single-pass review seam for the bulk flow.
-        """
-        return TerminalEditorSession(self.config_service)
-
     def _process(
         self,
         doc_id: int,
@@ -242,7 +233,7 @@ class CliAgentController:
             proposal.
           - neither -> the DEFAULT bulk flow: review every proposal in a
             single text-editor pass (`process_document_bulk`), using the
-            injected `EditorSession` from `_build_editor_session`.
+            `IEditor` injected into this controller.
 
         `dry_run` composes with all three: nothing is committed, but
         proposals are still gathered.
@@ -277,7 +268,7 @@ class CliAgentController:
                 )
             else:
                 result = self.agent_service.process_document_bulk(
-                    doc_id, editor=self._build_editor_session(), dry_run=dry_run
+                    doc_id, editor=self.editor, dry_run=dry_run
                 )
         except StructuredCallError as e:
             raise click.ClickException(f"Agent run failed: {e}. Nothing was committed.")

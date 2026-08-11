@@ -1,10 +1,12 @@
-"""Terminal-launcher implementation of the editor-session seam.
+"""Terminal-launcher implementation of `IEditor`.
 
-This is the ONE place in the new stack that spawns a real text editor. It
-implements the `EditorSession` protocol
-(`forte.service.agent_service.EditorSession`) so the bulk-commit
-orchestrator itself never imports `subprocess` or `tempfile` -- see
-`forte/service/agent/_editor.py` for the seam this fills.
+This is the ONE place in the stack that spawns a real text editor. The editor
+doesn't trigger any behavior of its own -- it's a low-level operation against
+an external dependency (`vim`, `code --wait`, etc.) that happens to be
+*called by* services, exactly like any other injected client. That makes it a
+client, not a controller: `main.py` constructs a single `TerminalEditorSession`
+and injects it wherever an `IEditor` is needed, and it is trivial to swap for
+a scripted stub in tests.
 
 Editor resolution follows git-style precedence:
 
@@ -15,13 +17,6 @@ The fallback chain is only consulted when none of `$VISUAL`, `$EDITOR`, or
 Editor command strings are split with `shlex.split` so values like
 ``"code --wait"`` work (GUI editors need their own wait flag to block the
 subprocess until the user closes the file).
-
-Neither `resolve_editor_command` nor `TerminalEditorSession` are Click
-groups -- they are plain, user-interface code, and the style guide has no
-other slot for a non-Click interactive component, so they live in
-`controller/` alongside the Click groups. `CliAgentController` constructs
-`TerminalEditorSession` directly and passes it into
-`AgentService.process_document_bulk` as the injected `EditorSession`.
 """
 
 from __future__ import annotations
@@ -33,7 +28,8 @@ import tempfile
 from pathlib import Path
 from shutil import which
 
-from forte.model.agent import EditorAbortedError
+from forte.interface.editor import IEditor
+from forte.model.editor import EditorAbortedError
 from forte.service.config_service import ConfigService
 
 _FALLBACK_EDITORS = ("vi", "nano")
@@ -79,7 +75,7 @@ def resolve_editor_command(config_service: ConfigService) -> str:
     return _FALLBACK_EDITORS[0]
 
 
-class TerminalEditorSession:
+class TerminalEditorSession(IEditor):
     """Launches the resolved editor command as a subprocess against a temp file.
 
     Writes `text` to a temporary `.md` file, runs the resolved editor command

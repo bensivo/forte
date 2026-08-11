@@ -6,19 +6,21 @@ retries, the three LLM steps, the two orchestrators, the bulk editor document
 format, the best-effort committer, and cost reporting) live in the private
 `forte.service.agent` sub-package.
 
-The reviewer and editor seams are re-exported here (`Reviewer`,
-`EditorSession`, `AutoApproveReviewer`, `ScriptedReviewer`) because they are
-part of this service's call signature — callers must be able to pass one in.
-Their concrete interactive implementations belong to the controller layer.
+The reviewer seam is re-exported here (`Reviewer`, `AutoApproveReviewer`,
+`ScriptedReviewer`) because it is part of this service's call signature —
+callers must be able to pass one in. Its concrete interactive implementation
+belongs to the controller layer. The editor seam is `forte.interface.editor.
+IEditor`, a feature-neutral interface that lives in `interface/` rather than
+being re-exported from here, since it is not specific to the agent feature.
 """
 
 from __future__ import annotations
 
+from forte.interface.editor import IEditor
 from forte.interface.llm_client import ILlmClient
 from forte.model.agent import ProcessResult
 from forte.model.llm import Usage
 from forte.service.agent._cost import format_cost_summary
-from forte.service.agent._editor import EditorSession
 from forte.service.agent._orchestrator import process_document, process_document_bulk
 from forte.service.agent._review import AutoApproveReviewer, Reviewer, ScriptedReviewer
 from forte.service.config_service import ConfigService
@@ -29,7 +31,6 @@ from forte.service.schema_service import SchemaService
 __all__ = [
     "AgentService",
     "AutoApproveReviewer",
-    "EditorSession",
     "Reviewer",
     "ScriptedReviewer",
 ]
@@ -46,7 +47,7 @@ class AgentService:
       pays for a field-extraction call. Takes an injected `Reviewer`.
     - `process_document_bulk`: the DEFAULT flow. Every proposal is reviewed in
       a SINGLE editor pass, which means every proposed entity must be
-      field-extracted up front. Takes an injected `EditorSession`.
+      field-extracted up front. Takes an injected `IEditor`.
 
     Both accept `dry_run`, which composes with either path: the full flow
     (including review) still runs, but the commit step is skipped entirely and
@@ -121,7 +122,7 @@ class AgentService:
         )
 
     def process_document_bulk(
-        self, doc_id: int, *, editor: EditorSession, dry_run: bool = False
+        self, doc_id: int, *, editor: IEditor, dry_run: bool = False
     ) -> ProcessResult:
         """
         Process a document, reviewing every proposal in one editor pass.
@@ -134,7 +135,7 @@ class AgentService:
 
         Args:
             doc_id (int): The id of the already-ingested document to process.
-            editor (EditorSession): The single-pass review seam.
+            editor (IEditor): The single-pass review seam.
             dry_run (bool): When True, run the full flow (the editor still
                 opens) but write nothing.
 

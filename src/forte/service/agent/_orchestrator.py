@@ -42,6 +42,7 @@ passed in that same order.
 
 from __future__ import annotations
 
+from forte.interface.editor import IEditor
 from forte.interface.llm_client import ILlmClient
 from forte.model.agent import (
     FieldSetTarget,
@@ -59,7 +60,6 @@ from forte.service.schema_service import SchemaService
 from ._bulk_format import parse as parse_bulk
 from ._bulk_format import render as render_bulk
 from ._commit import commit_changes
-from ._editor import EditorSession
 from ._review import Reviewer
 from ._steps import extract_entities, extract_fields, resolve_candidate
 
@@ -201,7 +201,7 @@ def process_document_bulk(
     doc_id: int,
     *,
     llm: ILlmClient,
-    editor: EditorSession,
+    editor: IEditor,
     document_service: DocumentService,
     entity_service: EntityService,
     schema_service: SchemaService,
@@ -252,7 +252,7 @@ def process_document_bulk(
     Args:
         doc_id (int): The id of the already-ingested document to process.
         llm (ILlmClient): The LLM boundary every pipeline step calls.
-        editor (EditorSession): The single-pass review seam.
+        editor (IEditor): The single-pass review seam.
         document_service (DocumentService): Reads the document's text and
             records doc-entity links at commit time.
         entity_service (EntityService): Supplies the existing entities used for

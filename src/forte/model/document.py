@@ -68,3 +68,12 @@ class SourceFileNotFoundError(DocumentError):
 
 class UnsupportedFileTypeError(DocumentError):
     """Raised when a document's file extension has no text extractor."""
+
+
+class InvalidDocumentNameError(DocumentError):
+    """Raised when ``create_document`` is given an empty or whitespace-only name."""
+
+
+class EmptyDocumentError(DocumentError):
+    """Raised when the text returned from the editor by ``create_document`` is
+    empty or whitespace-only."""

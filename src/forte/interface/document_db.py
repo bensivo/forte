@@ -48,6 +48,24 @@ class IDocumentDb(ABC):
         pass
 
     @abstractmethod
+    def add_text(self, name: str, content_hash: str, text: str) -> Document:
+        """
+        Persist a new document whose content originated in memory rather
+        than a file on disk: store its raw and processed copies (both
+        holding ``text``) and insert its row.
+
+        Args:
+            name (str): The document's human-readable name.
+            content_hash (str): The content hash of ``text``.
+            text (str): The document's plain-text content.
+
+        Returns:
+            (Document) The stored document, with its assigned ``id``,
+                ``raw_path``, and ``processed_path`` populated.
+        """
+        pass
+
+    @abstractmethod
     def list(self) -> list[Document]:
         """
         Return all documents, ordered by id.

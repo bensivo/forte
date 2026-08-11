@@ -18,7 +18,14 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 
+from forte.model.editor import EditorAbortedError  # noqa: F401 -- re-exported, see below
 from forte.model.llm import Usage
+
+# `EditorAbortedError` is re-exported here (rather than redefined) so existing
+# `from forte.model.agent import EditorAbortedError` call sites -- and their
+# `except EditorAbortedError` clauses -- keep working unchanged. The exception
+# itself now lives in the feature-neutral `forte.model.editor`, since the
+# editor seam is no longer agent-specific.
 
 
 @dataclass
@@ -201,13 +208,3 @@ class StructuredCallError(AgentError):
     def __init__(self, message: str, last_error: Exception) -> None:
         super().__init__(message)
         self.last_error = last_error
-
-
-class EditorAbortedError(AgentError):
-    """Raised when the user's editor process exits non-zero.
-
-    Signals that the editor session was aborted (e.g. the user quit with an
-    error, such as ``:cq`` in vim) rather than closed cleanly. Callers must
-    treat this as "commit nothing" — the bulk flow lets it propagate
-    unchanged since nothing has been committed by the time the editor runs.
-    """
