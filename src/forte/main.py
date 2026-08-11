@@ -4,6 +4,7 @@ the top-level Click CLI.
 
 import click
 
+from forte.client.fs_document_searcher import FsDocumentSearcher
 from forte.client.fs_vault_fs import LocalVaultFs
 from forte.client.sqlite_document_db import SqliteDocumentDb
 from forte.client.sqlite_entity_db import SqliteEntityDb
@@ -71,7 +72,8 @@ main.add_command(entity_controller.group())
 # `create_document`.
 config_service = ConfigService(YamlConfigStore(vault_context))
 editor = TerminalEditorSession(config_service)
-document_service = DocumentService(document_db, mention_db, entity_db, editor)
+document_searcher = FsDocumentSearcher(vault_context)
+document_service = DocumentService(document_db, mention_db, entity_db, editor, document_searcher)
 document_controller = CliDocumentController(document_service, vault_service, vault_context)
 main.add_command(document_controller.group())
 

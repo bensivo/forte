@@ -1,6 +1,6 @@
 # `forte doc` Spec
 
-Behavior spec for the `forte doc` command group — `forte doc ingest`, `forte doc list`, `forte doc show`, `forte doc link`, `forte doc unlink`, and `forte doc remove` — which bring raw documents into a Forte vault and manually associate them with entities. **Scope cut for this batch:** `doc ingest` performs only the first pipeline step (copy the source into `docs/raw/`) plus a new "extract raw text" step that writes the extracted text into `docs/processed/` with metadata frontmatter, then stops — there is no LLM call, no automatic entity extraction, no entity-linking proposals, and no review TUI yet. Because automatic linking isn't implemented yet, this batch also adds `doc link`/`doc unlink`, manual commands that directly create or remove rows in the `mentions` table so a user (or agent) can hand-link a processed doc to an existing entity. Unlike entities, documents are **not** dual-written as structured, editable knowledge: a doc has exactly two on-disk artifacts (the immutable raw copy and the derived processed copy) plus one row in the SQLite `documents` table; `docs/processed/` is regenerated output, not something a user hand-maintains. These commands operate on the default vault registered in `~/.forte/config.yaml`, or on the vault named by a `--vault <name>` option, regardless of the current working directory. See [docs/spec/forte-vault.md](./forte-vault.md) for how vaults are created and registered.
+Behavior spec for the `forte doc` command group — `forte doc ingest`, `forte doc create`, `forte doc list`, `forte doc show`, `forte doc search`, `forte doc link`, `forte doc unlink`, and `forte doc remove` — which bring raw documents into a Forte vault and manually associate them with entities. **Scope cut for this batch:** `doc ingest` performs only the first pipeline step (copy the source into `docs/raw/`) plus a new "extract raw text" step that writes the extracted text into `docs/processed/` with metadata frontmatter, then stops — there is no LLM call, no automatic entity extraction, no entity-linking proposals, and no review TUI yet. Because automatic linking isn't implemented yet, this batch also adds `doc link`/`doc unlink`, manual commands that directly create or remove rows in the `mentions` table so a user (or agent) can hand-link a processed doc to an existing entity. Unlike entities, documents are **not** dual-written as structured, editable knowledge: a doc has exactly two on-disk artifacts (the immutable raw copy and the derived processed copy) plus one row in the SQLite `documents` table; `docs/processed/` is regenerated output, not something a user hand-maintains. These commands operate on the default vault registered in `~/.forte/config.yaml`, or on the vault named by a `--vault <name>` option, regardless of the current working directory. See [docs/spec/forte-vault.md](./forte-vault.md) for how vaults are created and registered.
 
 ## Scenarios
 
@@ -121,6 +121,137 @@ And no document with id 99 exists
 When the user runs `forte doc show 99`
 Then the process prints an error message indicating the document was not found
 And the process exits with a non-zero status code
+```
+
+## `forte doc search`
+
+`forte doc search` is literal/regex full-text search over document bodies — the VSCode/Obsidian
+"search in files" experience, running entirely locally against the vault's `docs/processed/`
+text. It is deliberately **not** the deferred semantic `entity search` described in
+[docs/solution-design.md](./solution-design.md): there is no LLM call, no embeddings, and no
+network access, only pattern matching against text already on disk. Results are grouped by
+document, each document's matches are printed in ascending line order, and line numbers are
+1-based against the document's **body** (the same text `forte doc show` prints), so text that
+appears only in a processed file's YAML frontmatter is never reported as a match.
+
+### Scenario: A match in a single document
+
+```gherkin
+Given a default vault is set
+And a document `kickoff.md` has been ingested, whose body contains the line "We agreed the launch date is March 4th." on line 3
+When the user runs `forte doc search "launch date"`
+Then the process prints a header line `doc #<id>: kickoff.md`
+And the process prints an indented line `  line 3: We agreed the launch date is March 4th.`
+And the process prints a trailing summary `1 document, 1 match`
+And the process exits with status code 0
+```
+
+### Scenario: Matches across multiple documents, grouped by document
+
+```gherkin
+Given a default vault is set
+And a document `kickoff.md` has been ingested whose body mentions "launch date" on lines 3 and 5
+And a document `sync.md` has been ingested whose body mentions "launch date" on line 4
+When the user runs `forte doc search "launch date"`
+Then the process prints a group for `kickoff.md` listing both matching lines, 3 and 5, in ascending order
+And the process prints a group for `sync.md` listing its matching line, 4
+And a blank line separates the two document groups
+And the process prints a trailing summary `2 documents, 3 matches`
+And the process exits with status code 0
+```
+
+### Scenario: Search is case-insensitive by default
+
+```gherkin
+Given a default vault is set
+And a document `kickoff.md` has been ingested whose body contains the line "The Launch Date moved."
+When the user runs `forte doc search "launch date"`
+Then the process reports a match on that line despite the differing case
+And the process exits with status code 0
+```
+
+### Scenario: `--case-sensitive` restricts matching to exact case
+
+```gherkin
+Given a default vault is set
+And a document `kickoff.md` has been ingested whose body contains only the line "The Launch Date moved."
+When the user runs `forte doc search "launch date" --case-sensitive`
+Then the process prints "No matches."
+And the process exits with status code 0
+
+When the user instead runs `forte doc search "Launch Date" --case-sensitive`
+Then the process reports a match on that line
+And the process exits with status code 0
+```
+
+### Scenario: The query is treated literally by default
+
+```gherkin
+Given a default vault is set
+And a document `notes.md` has been ingested whose body contains the line "See section 4.2(a) for details."
+When the user runs `forte doc search "4.2(a)"`
+Then the process reports a match on that line, treating `.` and `(` as literal characters rather than regex metacharacters
+And the process exits with status code 0
+```
+
+### Scenario: `--regex` enables regular-expression matching
+
+```gherkin
+Given a default vault is set
+And a document `notes.md` has been ingested whose body contains the lines "Meeting on 2026-08-11." and "Meeting sometime soon."
+When the user runs `forte doc search "\d{4}-\d{2}-\d{2}" --regex`
+Then the process reports a match only on the line containing the date, "Meeting on 2026-08-11."
+And the process exits with status code 0
+```
+
+### Scenario: `--limit` caps matches shown per document
+
+```gherkin
+Given a default vault is set
+And a document `kickoff.md` has been ingested whose body mentions "launch" on five separate lines
+When the user runs `forte doc search "launch" --limit 2`
+Then the process prints exactly 2 matching lines under the `kickoff.md` group
+And the trailing summary counts only the 2 matches shown, not all 5 occurrences
+And the process exits with status code 0
+```
+
+### Scenario: No matches found
+
+```gherkin
+Given a default vault is set
+And a document `kickoff.md` has been ingested whose body does not contain the word "budget"
+When the user runs `forte doc search "budget"`
+Then the process prints "No matches."
+And the process exits with status code 0
+```
+
+### Scenario: An empty query is rejected
+
+```gherkin
+Given a default vault is set
+When the user runs `forte doc search ""`
+Then the process prints an error message indicating the search query must not be empty
+And the process exits with a non-zero status code
+```
+
+### Scenario: An invalid regex is rejected
+
+```gherkin
+Given a default vault is set
+When the user runs `forte doc search "(unclosed" --regex`
+Then the process prints an error message indicating the regular expression is invalid
+And the process exits with a non-zero status code
+```
+
+### Scenario: Search is scoped to the vault selected by `--vault`
+
+```gherkin
+Given a vault named `personal` is the default, containing a document whose body mentions "launch date"
+And a vault named `work` is registered, containing no document that mentions "launch date"
+When the user runs `forte doc search "launch date" --vault work`
+Then the process prints "No matches."
+And the process exits with status code 0
+And running `forte doc search "launch date"` (using the default vault) still reports the match from `personal`
 ```
 
 ### Scenario: Link a document to an entity

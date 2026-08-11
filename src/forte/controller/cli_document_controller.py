@@ -2,12 +2,16 @@ from pathlib import Path
 
 import click
 
-from forte.model.document import DocumentError
+from forte.model.document import DocumentError, DocumentMatch
 from forte.model.editor import EditorError
 from forte.model.entity import EntityError
 from forte.model.vault import VaultContext, VaultError
 from forte.service.document_service import DocumentService
 from forte.service.vault_service import VaultService
+
+# Long matching lines (e.g. a one-line PDF extract) are truncated around the
+# first match so a single result can't flood the terminal.
+_MAX_MATCH_LINE_LENGTH = 200
 
 
 # Adds the shared `--vault <name>` selector to a doc subcommand. Defined once
@@ -21,11 +25,105 @@ def _vault_option(f):
     )(f)
 
 
+def _truncate_match_line(
+    line: str, spans: list[tuple[int, int]], max_length: int = _MAX_MATCH_LINE_LENGTH
+) -> tuple[str, list[tuple[int, int]]]:
+    """
+    Truncate a match line to ``max_length`` characters, windowed around the
+    first match span, shifting any spans to their new offsets.
+
+    Args:
+        line (str): The full matching line.
+        spans (list[tuple[int, int]]): Match spans as (start, end) character
+            offsets within ``line``.
+        max_length (int): The maximum length of the returned line, not
+            counting ellipses added for truncation.
+
+    Returns:
+        (tuple[str, list[tuple[int, int]]]) The (possibly truncated) line,
+            and its spans adjusted to offsets within that line. Spans that
+            fall entirely outside the truncated window are dropped.
+    """
+    if len(line) <= max_length:
+        return line, spans
+
+    if not spans:
+        return line[:max_length] + "...", []
+
+    first_start, _ = spans[0]
+    half = max_length // 2
+    start = max(0, first_start - half)
+    end = min(len(line), start + max_length)
+    start = max(0, end - max_length)
+
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(line) else ""
+    windowed = line[start:end]
+    new_line = prefix + windowed + suffix
+
+    shift = len(prefix) - start
+    window_lo, window_hi = len(prefix), len(prefix) + len(windowed)
+    new_spans: list[tuple[int, int]] = []
+    for s, e in spans:
+        ns, ne = max(s + shift, window_lo), min(e + shift, window_hi)
+        if ns < ne:
+            new_spans.append((ns, ne))
+
+    return new_line, new_spans
+
+
+def _highlight_spans(line: str, spans: list[tuple[int, int]]) -> str:
+    """
+    Bold each matched span within ``line`` via `click.style`.
+
+    Args:
+        line (str): The line to highlight.
+        spans (list[tuple[int, int]]): Match spans as (start, end) character
+            offsets within ``line``, in ascending order.
+
+    Returns:
+        (str) ``line`` with each span wrapped in `click.style(bold=True)`.
+            Click strips styling automatically when stdout isn't a TTY.
+    """
+    if not spans:
+        return line
+
+    parts = []
+    cursor = 0
+    for start, end in spans:
+        if start > cursor:
+            parts.append(line[cursor:start])
+        parts.append(click.style(line[start:end], bold=True))
+        cursor = end
+    parts.append(line[cursor:])
+    return "".join(parts)
+
+
+def _render_match(match: DocumentMatch, line_number_width: int) -> str:
+    """
+    Render one matching line for display, right-aligning the line number and
+    highlighting/truncating the match text.
+
+    Args:
+        match (DocumentMatch): The match to render.
+        line_number_width (int): The width to right-align the line number to,
+            so line numbers within a document group line up.
+
+    Returns:
+        (str) A single indented, formatted line ready for `click.echo`.
+    """
+    line, spans = _truncate_match_line(match.line, match.spans)
+    rendered_line = _highlight_spans(line, spans)
+    line_number = click.style(f"line {match.line_number:>{line_number_width}}", dim=True)
+    return f"  {line_number}: {rendered_line}"
+
+
 class CliDocumentController:
     """
     CLI interface for DocumentService. Wires DocumentService operations up as
-    a `doc` Click command group (ingest/create/list/show/link/unlink/remove),
-    translating DocumentError, EntityError, and VaultError into Click errors.
+    a `doc` Click command group
+    (ingest/create/list/show/search/link/unlink/remove), translating
+    DocumentError, EntityError, and VaultError into Click errors.
     Contains no business logic of its own.
 
     Vault selection: `--vault <name>` is a per-subcommand option, so it is
@@ -121,6 +219,47 @@ class CliDocumentController:
             """Unlink document ID from entity ENTITY_ID."""
             controller._unlink(id, entity_id, vault_name)
 
+        @doc.command("search")
+        @click.argument("query")
+        @click.option(
+            "--case-sensitive",
+            "-s",
+            is_flag=True,
+            default=False,
+            help="Match case-sensitively (default: case-insensitive).",
+        )
+        @click.option(
+            "--regex",
+            "-r",
+            is_flag=True,
+            default=False,
+            help="Treat QUERY as a regular expression instead of literal text.",
+        )
+        @click.option(
+            "--limit",
+            "-n",
+            "limit",
+            type=int,
+            default=None,
+            help="Maximum number of matches to show per document.",
+        )
+        @_vault_option
+        def doc_search(
+            query: str,
+            case_sensitive: bool,
+            regex: bool,
+            limit: int | None,
+            vault_name: str | None,
+        ) -> None:
+            """Search document bodies for QUERY.
+
+            QUERY is matched literally (case-insensitively) by default, like
+            a normal text-editor search. Pass --regex to treat QUERY as a
+            regular expression instead, and --case-sensitive to disable
+            case-insensitive matching.
+            """
+            controller._search(query, case_sensitive, regex, limit, vault_name)
+
         @doc.command("remove")
         @click.argument("id", type=int)
         @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt.")
@@ -206,6 +345,45 @@ class CliDocumentController:
                 click.echo(f"  entity #{entity.id} [{entity.schema}] {entity.name}")
         else:
             click.echo("Mentions: (none)")
+
+    def _search(
+        self,
+        query: str,
+        case_sensitive: bool,
+        regex: bool,
+        limit: int | None,
+        vault_name: str | None,
+    ) -> None:
+        try:
+            self._select_vault(vault_name)
+            results = self.document_service.search_documents(
+                query,
+                case_sensitive=case_sensitive,
+                regex=regex,
+                limit_per_document=limit,
+            )
+        except (DocumentError, VaultError) as e:
+            raise click.ClickException(str(e))
+
+        if not results:
+            click.echo("No matches.")
+            return
+
+        total_matches = 0
+        for i, result in enumerate(results):
+            if i > 0:
+                click.echo("")
+            click.echo(f"doc #{result.document.id}: {result.document.name}")
+
+            width = max(len(str(m.line_number)) for m in result.matches)
+            for match in result.matches:
+                click.echo(_render_match(match, width))
+            total_matches += len(result.matches)
+
+        doc_word = "document" if len(results) == 1 else "documents"
+        match_word = "match" if total_matches == 1 else "matches"
+        click.echo("")
+        click.echo(f"{len(results)} {doc_word}, {total_matches} {match_word}")
 
     def _link(self, id: int, entity_id: int, vault_name: str | None) -> None:
         try:

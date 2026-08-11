@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from forte.interface.document_db import IDocumentDb
+from forte.interface.document_searcher import IDocumentSearcher
 from forte.interface.editor import IEditor
 from forte.interface.entity_db import IEntityDb
 from forte.interface.mention_db import IMentionDb
 from forte.model.document import (
     Document,
     DocumentNotFoundError,
+    DocumentSearchResult,
     EmptyDocumentError,
     InvalidDocumentNameError,
+    InvalidSearchQueryError,
     SourceFileNotFoundError,
     compute_content_hash,
 )
@@ -57,6 +61,7 @@ class DocumentService:
         mention_db: IMentionDb,
         entity_db: IEntityDb,
         editor: IEditor,
+        document_searcher: IDocumentSearcher,
     ):
         """
         Args:
@@ -66,11 +71,15 @@ class DocumentService:
                 referenced entity exists when linking/unlinking.
             editor (IEditor): Editing session used by ``create_document`` to
                 collect a new document's text from the user.
+            document_searcher (IDocumentSearcher): Scans stored document text
+                for lines matching a search pattern, used by
+                ``search_documents``.
         """
         self.document_db = document_db
         self.mention_db = mention_db
         self.entity_db = entity_db
         self.editor = editor
+        self.document_searcher = document_searcher
 
     def ingest_document(self, path: Path, name: str | None = None) -> Document:
         """
@@ -314,3 +323,69 @@ class DocumentService:
             raise DocumentNotFoundError(f"Document #{id} does not exist.")
         self.mention_db.remove_for_doc(id)
         self.document_db.remove(id)
+
+    def search_documents(
+        self,
+        query: str,
+        *,
+        case_sensitive: bool = False,
+        regex: bool = False,
+        limit_per_document: int | None = None,
+    ) -> list[DocumentSearchResult]:
+        """
+        Search all document bodies for lines matching ``query``.
+
+        This is a literal/regex text search (VSCode/Obsidian style), not a
+        semantic search. By default ``query`` is treated as a literal
+        substring (regex metacharacters are escaped) and matched
+        case-insensitively. Pass ``regex=True`` to treat ``query`` as a raw
+        regular expression, and ``case_sensitive=True`` to disable
+        case-insensitive matching.
+
+        Documents returned by the searcher that no longer have a row in
+        ``document_db`` (an orphaned processed file) are silently dropped
+        from the results rather than raising.
+
+        Args:
+            query (str): The text or pattern to search for.
+            case_sensitive (bool): If True, match case-sensitively. Defaults
+                to False.
+            regex (bool): If True, treat ``query`` as a regular expression
+                instead of a literal substring. Defaults to False.
+            limit_per_document (int | None): The maximum number of matches
+                to return per document, or None for no cap.
+
+        Returns:
+            (list[DocumentSearchResult]) One result per matching document,
+                ordered by document id, with each document's matches in
+                ascending line order.
+
+        Raises:
+            InvalidSearchQueryError: if ``query`` is empty or
+                whitespace-only, or if ``regex=True`` and ``query`` fails to
+                compile as a regular expression.
+        """
+        if not query.strip():
+            raise InvalidSearchQueryError("Search query must not be empty.")
+
+        flags = 0 if case_sensitive else re.IGNORECASE
+        pattern_text = query if regex else re.escape(query)
+        try:
+            pattern = re.compile(pattern_text, flags)
+        except re.error as e:
+            raise InvalidSearchQueryError(f"Invalid search pattern: {e}") from e
+
+        hits = self.document_searcher.search(pattern, limit_per_document)
+
+        documents_by_id = {doc.id: doc for doc in self.document_db.list()}
+
+        results: list[DocumentSearchResult] = []
+        for doc_id, matches in hits:
+            document = documents_by_id.get(doc_id)
+            if document is None:
+                continue
+            sorted_matches = sorted(matches, key=lambda m: m.line_number)
+            results.append(DocumentSearchResult(document=document, matches=sorted_matches))
+
+        results.sort(key=lambda r: r.document.id or 0)
+        return results

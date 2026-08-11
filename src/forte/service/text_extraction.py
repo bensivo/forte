@@ -42,7 +42,7 @@ def extract_text(path: Path) -> str:
     """
     suffix = path.suffix.lower()
 
-    if suffix in (".md", ".txt"):
+    if suffix in (".md", ".txt", ".py"):
         return path.read_text(encoding="utf-8")
 
     if suffix == ".docx":

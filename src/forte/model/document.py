@@ -77,3 +77,34 @@ class InvalidDocumentNameError(DocumentError):
 class EmptyDocumentError(DocumentError):
     """Raised when the text returned from the editor by ``create_document`` is
     empty or whitespace-only."""
+
+
+class InvalidSearchQueryError(DocumentError):
+    """Raised when ``search_documents`` is given an empty/whitespace-only
+    query, or a malformed regex when ``--regex`` is used."""
+
+
+@dataclass
+class DocumentMatch:
+    """A single matching line within a document's body text.
+
+    ``line_number`` is 1-based and counts lines of the document's BODY text
+    as seen via ``forte doc show`` — not lines of the processed markdown
+    file on disk, so it does not count the frontmatter block. ``spans`` are
+    the ``(start, end)`` character offsets of each match within ``line``,
+    letting a caller highlight the hits without re-running the search
+    pattern.
+    """
+
+    line_number: int
+    line: str
+    spans: list[tuple[int, int]]
+
+
+@dataclass
+class DocumentSearchResult:
+    """A document together with all of its matching lines, in the order
+    the matches were found in the document's body text."""
+
+    document: Document
+    matches: list[DocumentMatch]
