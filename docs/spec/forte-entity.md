@@ -142,6 +142,51 @@ Then the process prints an error message indicating the entity was not found
 And the process exits with a non-zero status code
 ```
 
+### Scenario: Show an entity with no mentions
+
+```gherkin
+Given a default vault is set
+And a `person` entity has been added
+And no document has been linked to it
+When the user runs `forte entity show <id>`
+Then the process prints a `Mentions:` line reading `Mentions: (none)`
+And the process exits with status code 0
+```
+
+### Scenario: Show an entity mentioned by one document
+
+```gherkin
+Given a default vault is set
+And a `person` entity has been added
+And a document has been ingested and linked to it via `forte doc link`
+When the user runs `forte entity show <id>`
+Then the process prints a `Mentions:` section listing that document by id and name
+And the process exits with status code 0
+```
+
+### Scenario: Show an entity mentioned by multiple documents
+
+```gherkin
+Given a default vault is set
+And a `person` entity has been added
+And two documents have been ingested and both linked to it via `forte doc link`
+When the user runs `forte entity show <id>`
+Then the process prints a `Mentions:` section listing both documents, in ascending document id order
+And the process exits with status code 0
+```
+
+### Scenario: Linking and unlinking a document changes its mention on the entity
+
+```gherkin
+Given a default vault is set
+And a `person` entity has been added
+And a document has been ingested
+When the user runs `forte doc link <doc_id> <entity_id>`
+Then running `forte entity show <entity_id>` afterward lists that document under `Mentions:`
+When the user then runs `forte doc unlink <doc_id> <entity_id>`
+Then running `forte entity show <entity_id>` afterward no longer lists that document, showing `Mentions: (none)`
+```
+
 ### Scenario: Edit an entity's name, fields, and aliases
 
 ```gherkin
@@ -246,7 +291,6 @@ And the process exits with a non-zero status code
 ## Out of scope
 
 - **`forte entity search`** — semantic/entity search is deferred along with the embeddings decision and is not part of this batch.
-- **Linked docs / mentions in `entity show`** — the PRD describes `entity show` as displaying an entity's fields *and* the documents that mention it. Mentions are produced by `forte doc ingest`, which does not exist yet, so the linked-docs section is empty for now (either omitted or shown as an explicit empty placeholder). Mention querying is not built in this batch.
 - **Schema-mutation cascade onto existing entities** — adding or removing a field on a schema and back-filling or stripping that field across its existing entities belongs to future `forte schema add-field` / `remove-field` commands. This batch only guarantees the structural field-set invariant holds at entity write time against the schema as it exists then.
 - **Reconciling hand-edits to markdown that bypass the CLI** — at MVP, editing an entity's markdown file directly (outside `forte entity edit`) is not detected or auto-reconciled with the SQLite index; drift is a known non-goal.
 - **`$EDITOR`-based editing** — `forte entity edit` uses a deterministic, flag-based interface (`--name` / `--set` / `--add-alias` / `--remove-alias`). Opening the markdown file in `$EDITOR` and re-parsing it is a natural richer alternative but is not built here.

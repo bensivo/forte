@@ -10,7 +10,7 @@ Doc ingest, linking, and retrieval:
 3. You create a few schemas for things you care about, like "client", "project", "meeting", "domain", populating them with some fields you think you might want to track
 4. As you work, you have meeting with a client. Your AI note-taking assistant generates a meeting transcript and meeting notes automatically, which you download.
 5. You open a terminal, go to your downloads, and enter `forte doc ingest <path>` to ingest it into your vault
-    - FRICTION: It's tedious to have to find the doc on your file-system when you already have it in front of you. Woudl be better if you can just drag it into the app, or copy-paste directly into forte.
+    - (DONE) FRICTION: It's tedious to have to find the doc on your file-system when you already have it in front of you. Woudl be better if you can just drag it into the app, or copy-paste directly into forte.
 6. You then link it to the appropriate entities automatically wtih `forte doc link <doc_id> <entity_id>`
     - FRICTION: You have to remember what the doc_id was so you can link it to entities
     - FRICTION: For every entity you want to link to, you have to:

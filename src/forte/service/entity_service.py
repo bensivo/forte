@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 
+from forte.interface.document_db import IDocumentDb
 from forte.interface.entity_db import IEntityDb
+from forte.interface.mention_db import IMentionDb
 from forte.interface.schema_db import ISchemaDb
+from forte.model.document import Document
 from forte.model.entity import (
     Entity,
     EntityNotFoundError,
@@ -99,15 +102,27 @@ class EntityService:
     only the *set* of field names is constrained.
     """
 
-    def __init__(self, entity_db: IEntityDb, schema_db: ISchemaDb):
+    def __init__(
+        self,
+        entity_db: IEntityDb,
+        schema_db: ISchemaDb,
+        mention_db: IMentionDb,
+        document_db: IDocumentDb,
+    ):
         """
         Args:
             entity_db (IEntityDb): Storage backend for entity persistence.
             schema_db (ISchemaDb): Storage backend used to look up the
                 authoritative field set for an entity's schema.
+            mention_db (IMentionDb): Storage backend used to look up an
+                entity's doc-entity mention links.
+            document_db (IDocumentDb): Storage backend used to resolve a
+                mention's document id to a document.
         """
         self.entity_db = entity_db
         self.schema_db = schema_db
+        self.mention_db = mention_db
+        self.document_db = document_db
 
     def add_entity(
         self,
@@ -197,6 +212,34 @@ class EntityService:
         if entity is None:
             raise EntityNotFoundError(f"Entity #{id} does not exist.")
         return entity
+
+    def list_mentioning_documents(self, id: int) -> list[Document]:
+        """
+        Return the documents that mention an entity, ordered by document id.
+
+        Reads the entity's mentions and resolves each one to its document.
+        A mention pointing at a document that no longer exists is skipped
+        rather than raising, so a stale row can never make ``entity show``
+        fail.
+
+        Args:
+            id (int): The entity id whose mentioning documents to list.
+
+        Returns:
+            (list[Document]) The mentioning documents, ordered by document id.
+
+        Raises:
+            EntityNotFoundError: if no entity with that id exists.
+        """
+        if self.entity_db.get(id) is None:
+            raise EntityNotFoundError(f"Entity #{id} does not exist.")
+
+        documents: list[Document] = []
+        for mention in self.mention_db.list_for_entity(id):
+            document = self.document_db.get(mention.doc_id)
+            if document is not None:
+                documents.append(document)
+        return sorted(documents, key=lambda d: d.id or 0)
 
     def edit_entity(
         self,

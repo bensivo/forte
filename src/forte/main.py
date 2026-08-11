@@ -53,8 +53,14 @@ schema_controller = CliSchemaController(schema_service, vault_service, vault_con
 main.add_command(schema_controller.group())
 
 # Add the 'entity' sub-commands
+#
+# `document_db` and `mention_db` are constructed here (ahead of their own
+# 'doc' sub-commands section below) because EntityService needs them to
+# resolve `list_mentioning_documents`.
 entity_db = SqliteEntityDb(vault_context)
-entity_service = EntityService(entity_db, schema_db)
+document_db = SqliteDocumentDb(vault_context)
+mention_db = SqliteMentionDb(vault_context)
+entity_service = EntityService(entity_db, schema_db, mention_db, document_db)
 entity_controller = CliEntityController(entity_service, vault_service, vault_context)
 main.add_command(entity_controller.group())
 
@@ -63,8 +69,6 @@ main.add_command(entity_controller.group())
 # `config_service` and `editor` are constructed here (ahead of the 'agent'
 # sub-commands below) because DocumentService needs the editor to power
 # `create_document`.
-document_db = SqliteDocumentDb(vault_context)
-mention_db = SqliteMentionDb(vault_context)
 config_service = ConfigService(YamlConfigStore(vault_context))
 editor = TerminalEditorSession(config_service)
 document_service = DocumentService(document_db, mention_db, entity_db, editor)

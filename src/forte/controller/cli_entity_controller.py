@@ -194,6 +194,7 @@ class CliEntityController:
         try:
             self._select_vault(vault_name)
             entity = self.entity_service.get_entity(id)
+            mentioning_docs = self.entity_service.list_mentioning_documents(id)
         except (EntityError, VaultError) as e:
             raise click.ClickException(str(e))
 
@@ -201,6 +202,14 @@ class CliEntityController:
         click.echo(f"Aliases: {', '.join(entity.aliases) or '(none)'}")
         for key, value in entity.fields.items():
             click.echo(f"{key}: {value}")
+
+        click.echo("")
+        if mentioning_docs:
+            click.echo("Mentions:")
+            for doc in mentioning_docs:
+                click.echo(f"  doc #{doc.id} {doc.name}")
+        else:
+            click.echo("Mentions: (none)")
 
     def _edit(
         self,

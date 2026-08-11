@@ -54,6 +54,19 @@ class IMentionDb(ABC):
         pass
 
     @abstractmethod
+    def list_for_entity(self, entity_id: int) -> list[Mention]:
+        """
+        Return every mention row belonging to an entity.
+
+        Args:
+            entity_id (int): The entity id whose mentions to read.
+
+        Returns:
+            (list[Mention]) The entity's mentions, ordered by doc id.
+        """
+        pass
+
+    @abstractmethod
     def remove(self, doc_id: int, entity_id: int) -> None:
         """
         Delete the mention row for the given pair, if any.

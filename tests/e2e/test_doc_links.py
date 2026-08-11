@@ -1,9 +1,5 @@
 """End-to-end tests for linking documents to entities: `forte doc link` and
 `forte doc unlink`.
-
-Note: the reverse direction — `forte entity show` listing the docs that link
-to it — is not implemented yet. Those scenarios are marked strict-xfail, so
-they turn into failures (prompting us to unmark them) once it lands.
 """
 
 import os
@@ -11,8 +7,6 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-
-import pytest
 
 # Resolve the CLI from the same virtualenv running pytest, so the test does
 # not depend on `forte` being on the ambient PATH.
@@ -73,8 +67,6 @@ def test_link_a_document_to_an_entity(tmp_path):
 
 
 # Scenario: linking is reflected on the entity
-# NOTE: `forte entity show` does not list linked docs yet.
-@pytest.mark.xfail(strict=True, reason="`entity show` does not list linked docs yet")
 def test_linking_is_reflected_on_the_entity(tmp_path):
     # Given: a vault with one ingested doc and one entity
     home, _ = a_doc_and_an_entity(tmp_path)
@@ -82,10 +74,11 @@ def test_linking_is_reflected_on_the_entity(tmp_path):
     # When: the user runs `forte doc link <doc_id> <entity_id>`
     assert forte("doc link 1 1", home).returncode == 0
 
-    # Then: `forte entity show <entity_id>` lists the doc among its linked docs
+    # Then: `forte entity show <entity_id>` lists the doc among its Mentions
     shown = forte("entity show 1", home)
     assert shown.returncode == 0, shown.stderr
-    assert "kickoff-notes.md" in shown.stdout
+    assert "Mentions:" in shown.stdout
+    assert "  doc #1 kickoff-notes.md" in shown.stdout
 
 
 # Scenario: link a document to a nonexistent entity
@@ -176,10 +169,6 @@ def test_removing_a_linked_entity_drops_the_link(tmp_path):
 
 
 # Scenario: removing a linked document drops the link
-# NOTE: depends on `forte entity show` listing linked docs, which is not
-# implemented yet — so the "Given" below cannot be observed from the entity
-# side today.
-@pytest.mark.xfail(strict=True, reason="`entity show` does not list linked docs yet")
 def test_removing_a_linked_document_drops_the_link(tmp_path):
     # Given: a vault with a doc linked to an entity
     home, _ = a_doc_and_an_entity(tmp_path)
@@ -193,4 +182,61 @@ def test_removing_a_linked_document_drops_the_link(tmp_path):
     # Then: `forte entity show <entity_id>` no longer references that doc
     shown = forte("entity show 1", home)
     assert shown.returncode == 0, shown.stderr
+    assert "kickoff-notes.md" not in shown.stdout
+
+
+# Scenario: an entity with no mentions shows an empty Mentions section
+def test_entity_show_with_no_mentions(tmp_path):
+    # Given: a vault with one entity and no linked docs
+    home, _ = a_doc_and_an_entity(tmp_path)
+
+    # When: the user runs `forte entity show <entity_id>`
+    shown = forte("entity show 1", home)
+
+    # Then: the process exits with status code 0
+    assert shown.returncode == 0, shown.stderr
+
+    # Then: the Mentions section reports none
+    assert "Mentions: (none)" in shown.stdout
+
+
+# Scenario: an entity mentioned by multiple documents lists them in doc-id order
+def test_entity_show_with_multiple_mentions(tmp_path):
+    # Given: a vault with one entity and two ingested docs, both linked to it
+    home, vault_dir = a_doc_and_an_entity(tmp_path)
+    source_dir = tmp_path / "source"
+    second_source = source_dir / "followup-notes.md"
+    second_source.write_text("# Followup\n\nWe met again.\n")
+    assert forte(f"doc ingest {second_source}", home).returncode == 0
+    assert forte("doc link 1 1", home).returncode == 0
+    assert forte("doc link 2 1", home).returncode == 0
+
+    # When: the user runs `forte entity show <entity_id>`
+    shown = forte("entity show 1", home)
+
+    # Then: the process exits with status code 0
+    assert shown.returncode == 0, shown.stderr
+
+    # Then: both docs are listed under Mentions, in ascending doc-id order
+    assert "Mentions:" in shown.stdout
+    first_pos = shown.stdout.index("doc #1 kickoff-notes.md")
+    second_pos = shown.stdout.index("doc #2 followup-notes.md")
+    assert first_pos < second_pos
+
+
+# Scenario: unlinking a document removes it from the entity's mentions
+def test_entity_show_after_unlink(tmp_path):
+    # Given: a vault with one entity mentioned by one doc
+    home, _ = a_doc_and_an_entity(tmp_path)
+    assert forte("doc link 1 1", home).returncode == 0
+    assert "  doc #1 kickoff-notes.md" in forte("entity show 1", home).stdout
+
+    # When: the user runs `forte doc unlink <doc_id> <entity_id>`
+    result = forte("doc unlink 1 1", home)
+    assert result.returncode == 0, result.stderr
+
+    # Then: `forte entity show <entity_id>` no longer lists the doc under Mentions
+    shown = forte("entity show 1", home)
+    assert shown.returncode == 0, shown.stderr
+    assert "Mentions: (none)" in shown.stdout
     assert "kickoff-notes.md" not in shown.stdout

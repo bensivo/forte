@@ -74,6 +74,22 @@ class SqliteMentionDb(IMentionDb):
             for r in rows
         ]
 
+    def list_for_entity(self, entity_id: int) -> list[Mention]:
+        layout = self._layout()
+        conn = sqlite3.connect(layout.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT doc_id, entity_id, quote, created_at FROM mentions "
+                "WHERE entity_id = ? ORDER BY doc_id",
+                (entity_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [
+            Mention(doc_id=r[0], entity_id=r[1], quote=r[2] or "", created_at=r[3] or "")
+            for r in rows
+        ]
+
     def remove(self, doc_id: int, entity_id: int) -> None:
         layout = self._layout()
         conn = sqlite3.connect(layout.db_path)
