@@ -21,4 +21,4 @@ Doc ingest, linking, and retrieval:
 7. One day, you're doing work for this client, and you need to remember what was said in teh meeting. You use `forte doc list` to find the doc by name, then open it with `forte doc show <doc_id>`
     - FRICTION: 2 steps to get content from a doc, and you have to remember the doc_id in between. Maybe better to have some interactive experience that lets you select eh doc automatically. 
 8. One day, you need a detail, btu can't remember which doc it's from, to search through all the doc contents, you have to use `grep` on the forte doc dir to find
-    - FRICTION: No text search within docs exists.
+    - (DONE) FRICTION: No text search within docs exists.
