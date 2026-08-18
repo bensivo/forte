@@ -1,10 +1,12 @@
+import sys
 from pathlib import Path
 
 import click
 
 from forte.model.document import DocumentError, DocumentMatch
 from forte.model.editor import EditorError
-from forte.model.entity import EntityError
+from forte.model.entity import Entity, EntityError
+from forte.model.entity_picker import EntityPickerAbortedError, EntityPickerError
 from forte.model.vault import VaultContext, VaultError
 from forte.service.document_service import DocumentService
 from forte.service.vault_service import VaultService
@@ -122,8 +124,9 @@ class CliDocumentController:
     """
     CLI interface for DocumentService. Wires DocumentService operations up as
     a `doc` Click command group
-    (ingest/create/list/show/search/link/unlink/remove), translating
-    DocumentError, EntityError, and VaultError into Click errors.
+    (ingest/create/list/show/search/link/link-interactive/unlink/remove),
+    translating DocumentError, EntityError, EntityPickerError, and
+    VaultError into Click errors.
     Contains no business logic of its own.
 
     Vault selection: `--vault <name>` is a per-subcommand option, so it is
@@ -172,23 +175,51 @@ class CliDocumentController:
         @click.option(
             "--name", default=None, help="Human-readable name for the doc (defaults to filename)."
         )
+        @click.option(
+            "--no-link",
+            "no_link",
+            is_flag=True,
+            default=False,
+            help="Skip the interactive entity-linking step that runs after ingest.",
+        )
         @_vault_option
-        def doc_ingest(path: str, name: str | None, vault_name: str | None) -> None:
-            """Ingest the file at PATH into the vault."""
-            controller._ingest(path, name, vault_name)
+        def doc_ingest(
+            path: str, name: str | None, no_link: bool, vault_name: str | None
+        ) -> None:
+            """Ingest the file at PATH into the vault.
+
+            Once the document is stored (or, for a re-ingested/deduped file,
+            once the existing document is found), offers the same
+            interactive entity-linking prompt as `forte doc link-interactive`.
+            Pass --no-link to skip that second step; it is also skipped
+            automatically when stdin is not an interactive terminal.
+            """
+            controller._ingest(path, name, no_link, vault_name)
 
         @doc.command("create")
         @click.argument("name")
+        @click.option(
+            "--no-link",
+            "no_link",
+            is_flag=True,
+            default=False,
+            help="Skip the interactive entity-linking step that runs after saving.",
+        )
         @_vault_option
-        def doc_create(name: str, vault_name: str | None) -> None:
+        def doc_create(name: str, no_link: bool, vault_name: str | None) -> None:
             """Create a new document named NAME by typing/pasting its text.
 
             Opens your editor ($VISUAL, then $EDITOR, then the vault's
             configured editor, falling back to vi/nano) on an empty buffer.
             Paste or type the document's contents, save, and close the
             editor to store it as a new document.
+
+            Once the document is stored, offers the same interactive
+            entity-linking prompt as `forte doc link-interactive`. Pass
+            --no-link to skip that second step; it is also skipped
+            automatically when stdin is not an interactive terminal.
             """
-            controller._create(name, vault_name)
+            controller._create(name, no_link, vault_name)
 
         @doc.command("list")
         @_vault_option
@@ -210,6 +241,21 @@ class CliDocumentController:
         def doc_link(id: int, entity_id: int, vault_name: str | None) -> None:
             """Link document ID to entity ENTITY_ID."""
             controller._link(id, entity_id, vault_name)
+
+        @doc.command("link-interactive")
+        @click.argument("id", type=int)
+        @_vault_option
+        def doc_link_interactive(id: int, vault_name: str | None) -> None:
+            """Interactively link document ID to one or more entities.
+
+            Type a few characters of an entity's name (matched literally,
+            case-insensitively, against names and aliases) to search, then
+            press Enter to add the highlighted suggestion to the running
+            list of links. Submit an empty line (or Ctrl-D) to finish the
+            session. Ctrl-C aborts the session, keeping whatever was
+            already linked before the interrupt.
+            """
+            controller._link_interactive(id, vault_name)
 
         @doc.command("unlink")
         @click.argument("id", type=int)
@@ -288,23 +334,59 @@ class CliDocumentController:
         vault = self.vault_service.resolve_vault(vault_name)
         self.vault_context.set_root(vault.path)
 
-    def _ingest(self, path: str, name: str | None, vault_name: str | None) -> None:
+    def _ingest(self, path: str, name: str | None, no_link: bool, vault_name: str | None) -> None:
         try:
             self._select_vault(vault_name)
             document = self.document_service.ingest_document(Path(path), name=name)
-        except (DocumentError, VaultError) as e:
+        except (DocumentError, VaultError, EntityPickerError) as e:
             raise click.ClickException(str(e))
 
         click.echo(f"Ingested doc #{document.id}: {document.name}")
+        self._offer_link_step(document, no_link)
 
-    def _create(self, name: str, vault_name: str | None) -> None:
+    def _create(self, name: str, no_link: bool, vault_name: str | None) -> None:
         try:
             self._select_vault(vault_name)
             document = self.document_service.create_document(name)
-        except (DocumentError, EditorError, VaultError) as e:
+        except (DocumentError, EditorError, VaultError, EntityPickerError) as e:
             raise click.ClickException(str(e))
 
         click.echo(f"Created doc #{document.id}: {document.name}")
+        self._offer_link_step(document, no_link)
+
+    def _offer_link_step(self, document, no_link: bool) -> None:
+        """
+        Run the shared follow-on interactive link step for `create`/`ingest`,
+        once the document already exists (persist first, link second): does
+        nothing if ``no_link`` is set, otherwise delegates to
+        `_run_interactive_link` (skipping rather than failing on a non-TTY
+        stdin) and reports the outcome the same way `link-interactive` does.
+
+        Args:
+            document: The just-created/ingested document (has `.id`, `.name`).
+            no_link (bool): Whether `--no-link` was passed.
+
+        Returns:
+            None
+
+        Raises:
+            click.ClickException: on abort (after reporting partial progress
+                and a resume hint) or on a propagated service/picker error.
+        """
+        if no_link:
+            return
+
+        try:
+            linked = self._run_interactive_link(document.id, fail_on_non_tty=False)
+        except EntityPickerAbortedError:
+            self._echo_link_abort(document.id, suggest_resume=True)
+        except (DocumentError, EntityError, EntityPickerError, VaultError) as e:
+            raise click.ClickException(str(e))
+
+        if linked is None:
+            return
+
+        self._echo_link_summary(document, linked)
 
     def _list(self, vault_name: str | None) -> None:
         try:
@@ -393,6 +475,136 @@ class CliDocumentController:
             raise click.ClickException(str(e))
 
         click.echo(f"Linked doc #{id} to entity #{entity_id}")
+
+    def _run_interactive_link(
+        self, document_id: int, *, fail_on_non_tty: bool = True
+    ) -> list[Entity] | None:
+        """
+        Guard and invoke the interactive entity-linking flow for
+        ``document_id``, against the vault already pointed at by
+        ``self.vault_context``.
+
+        Shared by `link-interactive`, `create`, and `ingest`, so the guards
+        below can never drift apart between the three entry points:
+          - stdin must be a TTY. When ``fail_on_non_tty`` is True (the
+            standalone `link-interactive` command), a non-interactive
+            invocation fails fast with a message pointing at the
+            non-interactive `forte doc link <doc_id> <entity_id>`
+            alternative, instead of hanging or crashing inside
+            prompt-toolkit. When False (the `create`/`ingest` follow-on
+            step), a non-interactive invocation is silently skippable
+            instead: a short note is printed and `None` is returned, so
+            scripts and agents piping input never land in a prompt.
+          - the vault must have at least one entity to offer; otherwise a
+            short note is printed and the picker is never invoked (no
+            empty completion menu).
+        Everything else -- document-existence validation, the actual
+        picker session, and linking each selection -- is delegated to
+        `DocumentService.link_document_interactive`. Callers are
+        responsible for translating the exceptions it can raise (including
+        `EntityPickerAbortedError`) into user-facing output.
+
+        Args:
+            document_id (int): The id of the document to link entities to.
+            fail_on_non_tty (bool): Whether a non-TTY stdin should raise
+                (the standalone command) or be skipped quietly (the
+                `create`/`ingest` follow-on step).
+
+        Returns:
+            (list[Entity] | None) The entities newly linked, in selection
+                order. `None` if the step was skipped -- because the vault
+                has no entities to offer, or (when ``fail_on_non_tty`` is
+                False) stdin isn't a TTY -- in either case a short message
+                has already been printed, so the caller should treat it as
+                a completed, zero-link run rather than print its own
+                summary.
+
+        Raises:
+            click.ClickException: if stdin is not a TTY and
+                ``fail_on_non_tty`` is True.
+            DocumentError: propagated from
+                `DocumentService.link_document_interactive` (e.g. an
+                unknown document id).
+            EntityPickerAbortedError: propagated if the picker session is
+                aborted by the user.
+        """
+        if not sys.stdin.isatty():
+            if not fail_on_non_tty:
+                click.echo("Skipping the link step: stdin is not interactive.")
+                return None
+            raise click.ClickException(
+                "link-interactive requires an interactive terminal. "
+                "Use `forte doc link <doc_id> <entity_id>` instead."
+            )
+
+        if not self.document_service.search_entities(""):
+            click.echo("No entities to link.")
+            return None
+
+        click.echo("")
+        click.echo("Link entities (type to search, Enter to add, empty line to finish):")
+        return self.document_service.link_document_interactive(document_id)
+
+    def _echo_link_summary(self, document, linked: list[Entity]) -> None:
+        """Print the shared "N entities linked to doc #X: name" summary
+        (or the "none linked" note) used by `link-interactive`, `create`,
+        and `ingest` alike."""
+        if linked:
+            word = "entity" if len(linked) == 1 else "entities"
+            click.echo(f"Linked {len(linked)} {word} to doc #{document.id}: {document.name}")
+            for entity in linked:
+                click.echo(f"  #{entity.id} [{entity.schema}] {entity.name}")
+        else:
+            click.echo(f"No entities linked to doc #{document.id}: {document.name}")
+
+    def _echo_link_abort(self, document_id: int, *, suggest_resume: bool) -> None:
+        """Print the shared abort message reporting whatever was linked
+        before an `EntityPickerAbortedError`, then raise the
+        `click.ClickException` that gives the process its non-zero exit.
+
+        Args:
+            document_id (int): The document the aborted session targeted.
+            suggest_resume (bool): Whether to add a
+                `forte doc link-interactive <id>` resume hint -- used by
+                `create`/`ingest`, where the user hasn't already run that
+                command, but not by `link-interactive` itself.
+
+        Raises:
+            click.ClickException: always, to end the command with a
+                non-zero exit code.
+        """
+        linked_so_far = self.document_service.list_linked_entities(document_id)
+        if linked_so_far:
+            word = "entity" if len(linked_so_far) == 1 else "entities"
+            click.echo(f"Aborted. Linked {len(linked_so_far)} {word} before the abort:")
+            for entity in linked_so_far:
+                click.echo(f"  #{entity.id} [{entity.schema}] {entity.name}")
+        else:
+            click.echo("Aborted. No entities were linked.")
+        if suggest_resume:
+            click.echo(f"Resume with `forte doc link-interactive {document_id}`.")
+        raise click.ClickException("Entity linking session aborted.")
+
+    def _link_interactive(self, id: int, vault_name: str | None) -> None:
+        try:
+            self._select_vault(vault_name)
+            document = self.document_service.get_document(id)
+        except (DocumentError, VaultError) as e:
+            raise click.ClickException(str(e))
+
+        click.echo(f"doc #{document.id}: {document.name}")
+
+        try:
+            linked = self._run_interactive_link(id)
+        except EntityPickerAbortedError:
+            self._echo_link_abort(id, suggest_resume=False)
+        except (DocumentError, EntityError, EntityPickerError, VaultError) as e:
+            raise click.ClickException(str(e))
+
+        if linked is None:
+            return
+
+        self._echo_link_summary(document, linked)
 
     def _unlink(self, id: int, entity_id: int, vault_name: str | None) -> None:
         try:

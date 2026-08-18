@@ -82,6 +82,8 @@ def _make_service(searcher: FakeDocumentSearcher, documents: list[Document]) -> 
         entity_db=None,  # type: ignore[arg-type]
         editor=None,  # type: ignore[arg-type]
         document_searcher=searcher,
+        entity_picker=None,  # type: ignore[arg-type]
+        search_entities=None,  # type: ignore[arg-type]
     )
 
 

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Callable
 
 from forte.interface.document_db import IDocumentDb
 from forte.interface.document_searcher import IDocumentSearcher
 from forte.interface.editor import IEditor
 from forte.interface.entity_db import IEntityDb
+from forte.interface.entity_picker import IEntityPicker
 from forte.interface.mention_db import IMentionDb
 from forte.model.document import (
     Document,
@@ -62,6 +64,8 @@ class DocumentService:
         entity_db: IEntityDb,
         editor: IEditor,
         document_searcher: IDocumentSearcher,
+        entity_picker: IEntityPicker,
+        search_entities: Callable[[str], list[Entity]],
     ):
         """
         Args:
@@ -74,12 +78,21 @@ class DocumentService:
             document_searcher (IDocumentSearcher): Scans stored document text
                 for lines matching a search pattern, used by
                 ``search_documents``.
+            entity_picker (IEntityPicker): Interactive selection session used
+                by ``link_document_interactive`` to let a person choose which
+                entities to link.
+            search_entities (Callable[[str], list[Entity]]): Entity search
+                callback passed through to ``entity_picker``. Excludes
+                nothing -- already-linked entities are filtered at link time,
+                not at search time, so a user can still see every entity.
         """
         self.document_db = document_db
         self.mention_db = mention_db
         self.entity_db = entity_db
         self.editor = editor
         self.document_searcher = document_searcher
+        self.entity_picker = entity_picker
+        self.search_entities = search_entities
 
     def ingest_document(self, path: Path, name: str | None = None) -> Document:
         """
@@ -276,6 +289,55 @@ class DocumentService:
         if self.mention_db.exists(doc_id, entity_id):
             return
         self.mention_db.add(doc_id, entity_id, quote)
+
+    def link_document_interactive(self, document_id: int) -> list[Entity]:
+        """
+        Run an interactive picker session to link entities to a document.
+
+        Looks up ``document_id`` first, so a nonexistent document is
+        rejected before any prompt is ever shown. The picker is then run
+        with ``search_entities`` (unfiltered -- a user may deliberately
+        want to see every entity), and each entity the user selects is
+        linked via ``link_document``, reusing its existing validation.
+
+        Entities already linked to the document are skipped rather than
+        double-linked. An entity selected in the picker but deleted before
+        this method links it (e.g. removed concurrently) is also skipped
+        rather than failing the whole operation.
+
+        Args:
+            document_id (int): The id of the existing document to link
+                entities to.
+
+        Returns:
+            (list[Entity]) The entities that were newly linked, in
+                selection order. Already-linked or since-deleted selections
+                are excluded.
+
+        Raises:
+            DocumentNotFoundError: if no document with ``document_id``
+                exists; raised before the picker is invoked.
+            EntityPickerAbortedError: if the picker's selection session is
+                aborted by the user (propagated unchanged); any entities
+                already linked before the abort stay linked.
+        """
+        if self.document_db.get(document_id) is None:
+            raise DocumentNotFoundError(f"Document #{document_id} does not exist.")
+
+        selected = self.entity_picker.pick(self.search_entities)
+
+        linked: list[Entity] = []
+        for entity in selected:
+            if entity.id is None:
+                continue
+            if self.mention_db.exists(document_id, entity.id):
+                continue
+            try:
+                self.link_document(document_id, entity.id)
+            except EntityNotFoundError:
+                continue
+            linked.append(entity)
+        return linked
 
     def unlink_document(self, doc_id: int, entity_id: int) -> None:
         """

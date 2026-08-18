@@ -91,6 +91,46 @@ def find_candidates(
     return sorted(matches.values(), key=lambda e: (e.id is None, e.id))
 
 
+def _search_rank(entity: Entity, normalized_query: str) -> tuple[int, int, int] | None:
+    """Return the sort key for ``entity`` against ``normalized_query``, or
+    ``None`` if it does not match.
+
+    The key is ``(name_rank, prefix_rank, entity_id)``:
+      - ``name_rank`` is 0 when the query matches the entity's name, 1 when
+        it only matches an alias — name matches sort first.
+      - ``prefix_rank`` is 0 when the (best) matching field starts with the
+        query, 1 for a mid-string match — prefix matches sort first.
+      - ``entity_id`` is the final, deterministic tiebreak.
+
+    An empty ``normalized_query`` matches every entity (as a prefix match on
+    the name), which is what backs "show everything before typing anything".
+    """
+    entity_id = entity.id if entity.id is not None else -1
+
+    def field_rank(value: str) -> int | None:
+        normalized_value = _normalize(value)
+        if normalized_query not in normalized_value:
+            return None
+        return 0 if normalized_value.startswith(normalized_query) else 1
+
+    name_prefix_rank = field_rank(entity.name)
+    if name_prefix_rank is not None:
+        return (0, name_prefix_rank, entity_id)
+
+    best_alias_rank: int | None = None
+    for alias in entity.aliases:
+        alias_rank = field_rank(alias)
+        if alias_rank is not None and (best_alias_rank is None or alias_rank < best_alias_rank):
+            best_alias_rank = alias_rank
+            if best_alias_rank == 0:
+                break
+
+    if best_alias_rank is not None:
+        return (1, best_alias_rank, entity_id)
+
+    return None
+
+
 class EntityService:
     """
     Contains all the operations that can be performed on entities: create,
@@ -194,6 +234,46 @@ class EntityService:
         if schema is not None and self.schema_db.get(schema) is None:
             raise UnknownSchemaError(f"Schema {schema!r} does not exist.")
         return self.entity_db.list(schema=schema)
+
+    def search_entities(self, query: str, *, limit: int | None = None) -> list[Entity]:
+        """
+        Return entities whose name or any alias contains ``query`` as a
+        case-insensitive substring, across all schemas.
+
+        ``query`` is normalized the same way names/aliases are compared
+        elsewhere (lowercased, internal whitespace collapsed, stripped)
+        before matching, so ``"  ali "`` and ``"ali"`` behave identically.
+        An empty or whitespace-only query matches every entity, which backs
+        the "show me everything before I've typed anything" state of the
+        interactive prompt.
+
+        Results are ranked deterministically: name matches before
+        alias-only matches, prefix matches before mid-string matches, then
+        ascending entity id as the final tiebreak. Each entity appears at
+        most once, even if it matches on both its name and an alias.
+
+        Args:
+            query (str): The substring to search for.
+            limit (int | None): If given, caps the number of results
+                returned, applied after ranking.
+
+        Returns:
+            (list[Entity]) The matching entities, ranked as described above.
+        """
+        normalized_query = _normalize(query)
+
+        ranked: list[tuple[tuple[int, int, int], Entity]] = []
+        for entity in self.entity_db.list():
+            rank = _search_rank(entity, normalized_query)
+            if rank is not None:
+                ranked.append((rank, entity))
+
+        ranked.sort(key=lambda pair: pair[0])
+        results = [entity for _, entity in ranked]
+
+        if limit is not None:
+            results = results[:limit]
+        return results
 
     def get_entity(self, id: int) -> Entity:
         """

@@ -1,6 +1,6 @@
 # `forte doc` Spec
 
-Behavior spec for the `forte doc` command group — `forte doc ingest`, `forte doc create`, `forte doc list`, `forte doc show`, `forte doc search`, `forte doc link`, `forte doc unlink`, and `forte doc remove` — which bring raw documents into a Forte vault and manually associate them with entities. **Scope cut for this batch:** `doc ingest` performs only the first pipeline step (copy the source into `docs/raw/`) plus a new "extract raw text" step that writes the extracted text into `docs/processed/` with metadata frontmatter, then stops — there is no LLM call, no automatic entity extraction, no entity-linking proposals, and no review TUI yet. Because automatic linking isn't implemented yet, this batch also adds `doc link`/`doc unlink`, manual commands that directly create or remove rows in the `mentions` table so a user (or agent) can hand-link a processed doc to an existing entity. Unlike entities, documents are **not** dual-written as structured, editable knowledge: a doc has exactly two on-disk artifacts (the immutable raw copy and the derived processed copy) plus one row in the SQLite `documents` table; `docs/processed/` is regenerated output, not something a user hand-maintains. These commands operate on the default vault registered in `~/.forte/config.yaml`, or on the vault named by a `--vault <name>` option, regardless of the current working directory. See [docs/spec/forte-vault.md](./forte-vault.md) for how vaults are created and registered.
+Behavior spec for the `forte doc` command group — `forte doc ingest`, `forte doc create`, `forte doc list`, `forte doc show`, `forte doc search`, `forte doc link`, `forte doc link-interactive`, `forte doc unlink`, and `forte doc remove` — which bring raw documents into a Forte vault and manually associate them with entities. **Scope cut for this batch:** `doc ingest` performs only the first pipeline step (copy the source into `docs/raw/`) plus a new "extract raw text" step that writes the extracted text into `docs/processed/` with metadata frontmatter, then stops — there is no LLM call, no automatic entity extraction, no entity-linking proposals, and no review TUI yet. Because automatic linking isn't implemented yet, this batch also adds `doc link`/`doc unlink`, manual commands that directly create or remove rows in the `mentions` table so a user (or agent) can hand-link a processed doc to an existing entity, plus `doc link-interactive`, an interactive prompt that picks entities by typing a partial name instead of an id. Both `doc create` and `doc ingest` are **two-step flows**: the document is stored first (via the editor, or via the raw-copy/extract pipeline), and only once it exists on disk and in the `documents` table does a second step offer the same interactive link prompt described under `forte doc link-interactive`; both accept `--no-link` to skip that second step. Unlike entities, documents are **not** dual-written as structured, editable knowledge: a doc has exactly two on-disk artifacts (the immutable raw copy and the derived processed copy) plus one row in the SQLite `documents` table; `docs/processed/` is regenerated output, not something a user hand-maintains. These commands operate on the default vault registered in `~/.forte/config.yaml`, or on the vault named by a `--vault <name>` option, regardless of the current working directory. See [docs/spec/forte-vault.md](./forte-vault.md) for how vaults are created and registered.
 
 ## Scenarios
 
@@ -300,6 +300,156 @@ And the process exits with status code 0
 And exactly one row linking doc 7 and entity 3 is present in the `mentions` table (no duplicate is created)
 ```
 
+## `forte doc link-interactive`
+
+`forte doc link-interactive <id>` is the interactive counterpart to `forte doc link`: instead of
+looking up an entity's id by hand, the user types a few characters of an entity's name and picks it
+from a live-updating suggestion list, in a loop — pick one, it is added to a running list of links,
+pick the next, submit an empty line (or Ctrl-D) to finish. Matching is **literal, case-insensitive
+substring matching over each entity's name and its aliases** — no LLM, no embeddings, no network
+calls — and is deliberately independent of the deferred semantic `entity search` described in
+[docs/solution-design.md](./solution-design.md). Suggestions are displayed as `#<id> [<schema>]
+<name>`, so the user always sees an entity's id, type, and name before picking it. A successful
+session produces exactly the links `forte doc link` would: each picked entity gets a row in the
+`mentions` table, `forte doc show <id>` lists it under `Mentions:` afterward, and `forte entity show
+<entity_id>` lists the document under its own `Mentions:` section.
+
+### Scenario: Type a partial name and select the suggested entity
+
+```gherkin
+Given a default vault is set
+And a document with id 12 named "Acme Kickoff Notes" exists
+And an entity with id 1, schema `person`, name "Alice" exists
+And an entity with id 7, schema `person`, name "Alice Nguyen" exists
+When the user runs `forte doc link-interactive 12`
+Then the process prints `doc #12: Acme Kickoff Notes`
+When the user types `ali`
+Then the process shows a suggestion list including `#1 [person] Alice` and `#7 [person] Alice
+  Nguyen`, each line showing the entity's id, type, and name
+When the user selects `#1 [person] Alice`
+Then the process prints a confirmation that `#1 [person] Alice` was linked
+When the user finishes the session with an empty line
+Then the process prints a summary reporting 1 entity linked to doc #12
+And the process exits with status code 0
+And a row linking doc 12 and entity 1 is present in the `mentions` table
+And running `forte doc show 12` afterward lists `#1 [person] Alice` under `Mentions:`
+And running `forte entity show 1` afterward lists document 12 under its `Mentions:` section
+```
+
+### Scenario: Select several entities in one session
+
+```gherkin
+Given a default vault is set
+And a document with id 12 exists
+And entities `#1 [person] Alice`, `#4 [client] Acme Corp`, and `#9 [client] Beta LLC` exist
+When the user runs `forte doc link-interactive 12`
+And the user types `ali` and selects `#1 [person] Alice`
+And the user types `acme` and selects `#4 [client] Acme Corp`
+And the user finishes the session with an empty line
+Then the process reports 2 entities linked, listing `#1 [person] Alice` and `#4 [client] Acme Corp`
+And the process exits with status code 0
+And rows linking doc 12 to entity 1 and to entity 4 are both present in the `mentions` table
+And running `forte doc show 12` afterward lists both entities under `Mentions:`
+```
+
+### Scenario: Finishing with an empty line immediately links nothing
+
+```gherkin
+Given a default vault is set
+And a document with id 12 exists
+And at least one entity exists in the vault
+When the user runs `forte doc link-interactive 12`
+And the user finishes the session immediately with an empty line, without selecting any entity
+Then the process prints a message reporting that no entities were linked
+And the process exits with status code 0
+And no row is added to the `mentions` table for document 12
+```
+
+### Scenario: Text that matches no entity re-prompts instead of erroring
+
+```gherkin
+Given a default vault is set
+And a document with id 12 exists
+And an entity with id 1, schema `person`, name "Alice" exists
+And no entity's name or alias contains "zzz"
+When the user runs `forte doc link-interactive 12`
+And the user types `zzz`
+Then the process shows no suggestions and a short "no match" message
+And the session remains open, still awaiting input, rather than exiting or raising an error
+When the user clears the input, types `ali`, and selects `#1 [person] Alice`
+And the user finishes the session with an empty line
+Then the process reports 1 entity linked, `#1 [person] Alice`
+And the process exits with status code 0
+```
+
+### Scenario: Selecting an entity already linked to the document is a no-op
+
+```gherkin
+Given a default vault is set
+And a document with id 12 is already linked to entity `#1 [person] Alice`
+When the user runs `forte doc link-interactive 12`
+And the user types `ali` and selects `#1 [person] Alice`
+Then the process prints a brief message noting the entity is already linked, rather than adding a
+  duplicate to the running list
+When the user finishes the session with an empty line
+Then the process exits with status code 0
+And exactly one row linking doc 12 and entity 1 is present in the `mentions` table
+```
+
+### Scenario: Aborting mid-session preserves what was already linked
+
+```gherkin
+Given a default vault is set
+And a document with id 12 exists
+And an entity with id 1, schema `person`, name "Alice" exists
+When the user runs `forte doc link-interactive 12`
+And the user types `ali` and selects `#1 [person] Alice`
+And the user aborts the session (Ctrl-C) before finishing
+Then the process prints a message reporting that 1 entity was linked before the abort, with no
+  Python traceback shown
+And the process exits with a non-zero status code
+And a row linking doc 12 and entity 1 is present in the `mentions` table
+And no further rows are added to the `mentions` table for document 12
+```
+
+### Scenario: An unknown document id fails before any prompt is shown
+
+```gherkin
+Given a default vault is set
+And no document with id 99 exists
+When the user runs `forte doc link-interactive 99`
+Then the process prints an error message indicating the document was not found
+And the process exits with a non-zero status code
+And no interactive prompt is shown
+And no row is added to the `mentions` table
+```
+
+### Scenario: Non-TTY stdin fails fast instead of hanging
+
+```gherkin
+Given a default vault is set
+And a document with id 12 exists
+And stdin is not a TTY (e.g. piped input, or the command is run from a script or agent)
+When the user runs `forte doc link-interactive 12`
+Then the process prints an error message pointing at `forte doc link <doc_id> <entity_id>` as the
+  non-interactive alternative
+And the process exits with a non-zero status code
+And no interactive prompt is attempted
+And no row is added to the `mentions` table
+```
+
+### Scenario: A vault with no entities
+
+```gherkin
+Given a default vault is set
+And a document with id 12 exists
+And no entities exist in the vault
+When the user runs `forte doc link-interactive 12`
+Then the process prints a short message indicating there are no entities to link
+And the process exits with status code 0
+And no interactive completion menu is shown
+```
+
 ### Scenario: Unlink a linked document and entity
 
 ```gherkin
@@ -413,7 +563,7 @@ And the document is removed as in the "Remove an existing document" scenario
 
 ```gherkin
 Given no default vault is registered in `~/.forte/config.yaml`
-When the user runs any `forte doc` subcommand (`ingest`, `list`, `show`, `link`, `unlink`, or `remove`) with no `--vault` option
+When the user runs any `forte doc` subcommand (`ingest`, `create`, `list`, `show`, `link`, `link-interactive`, `unlink`, or `remove`) with no `--vault` option
 Then the process prints a clear error message telling the user to run `forte vault create` or `forte vault set-default`
 And the process exits with a non-zero status code
 And no document is ingested, listed, shown, linked, unlinked, or removed
@@ -440,10 +590,156 @@ Then the process prints an error message indicating the vault was not found
 And the process exits with a non-zero status code
 ```
 
+## `forte doc create` — the follow-on link step
+
+`forte doc create <name>` stores the document first (via the editor step), then — once the
+document has an id — offers the same prompt described under `forte doc link-interactive`, so a new
+document can be tied to its entities without a separate command. `--no-link` skips that second step
+entirely, preserving the fully non-interactive behavior scripts and agents rely on.
+
+### Scenario: `forte doc create` offers the link step after saving
+
+```gherkin
+Given a default vault is set
+And an entity with id 1, schema `person`, name "Alice" exists
+When the user runs `forte doc create "Kickoff Notes"` and saves text in the editor
+Then the document is stored and assigned an id, e.g. 12, before any link prompt is shown
+And the process then runs the same prompt described under `forte doc link-interactive`
+When the user types `ali` and selects `#1 [person] Alice`
+And the user finishes the session with an empty line
+Then the process prints the created document's id and name, "Kickoff Notes"
+And the process prints the entities linked, `#1 [person] Alice`
+And the process exits with status code 0
+And running `forte doc show 12` afterward lists `#1 [person] Alice` under `Mentions:`
+```
+
+### Scenario: `forte doc create --no-link` skips the link step
+
+```gherkin
+Given a default vault is set
+When the user runs `forte doc create "Kickoff Notes" --no-link` and saves text in the editor
+Then the document is stored and assigned an id as usual
+And the process does not run the interactive link prompt
+And the process exits with status code 0
+And no row is added to the `mentions` table for the new document
+```
+
+### Scenario: `forte doc create` skips the link step automatically when stdin is not a TTY
+
+```gherkin
+Given a default vault is set
+And stdin is not a TTY (e.g. the command is run from a script or agent, or with piped input)
+When the user runs `forte doc create "Kickoff Notes"`
+Then the document is stored and assigned an id as usual
+And the process prints a short message noting the link step was skipped because stdin is not
+  interactive
+And the process exits with status code 0
+And no row is added to the `mentions` table for the new document
+```
+
+### Scenario: Aborting the link step after `forte doc create` reports progress and a resume hint
+
+```gherkin
+Given a default vault is set
+And an entity with id 1, schema `person`, name "Alice" exists
+When the user runs `forte doc create "Kickoff Notes"` and saves text in the editor
+And the user types `ali` and selects `#1 [person] Alice`
+And the user aborts the session (Ctrl-C) before finishing
+Then the process prints the created document's id, e.g. 12, and reports that 1 entity was linked
+  before the abort, with no Python traceback shown
+And the process suggests running `forte doc link-interactive 12` to finish linking
+And the process exits with a non-zero status code
+And the document, and the one link made before the abort, are both still present afterward
+```
+
+## `forte doc ingest` — the follow-on link step
+
+`forte doc ingest <path>` stores the document first (copy + extract, as in the ingest scenarios
+above), then — once the document has an id — offers the same prompt described under `forte doc
+link-interactive`. `--no-link` skips that second step. A deduped re-ingest (see "Re-ingest an
+unchanged file is a no-op" above) still offers the link step, against the existing document's id,
+rather than skipping it.
+
+### Scenario: `forte doc ingest` offers the link step after storing the document
+
+```gherkin
+Given a default vault is set
+And a file `kickoff.md` exists on disk outside the vault
+And an entity with id 1, schema `person`, name "Alice" exists
+When the user runs `forte doc ingest kickoff.md`
+Then the document is copied, extracted, and assigned an id, e.g. 12, before any link prompt is shown
+And the process then runs the same prompt described under `forte doc link-interactive`
+When the user types `ali` and selects `#1 [person] Alice`
+And the user finishes the session with an empty line
+Then the process prints the ingested document's id and name
+And the process prints the entities linked, `#1 [person] Alice`
+And the process exits with status code 0
+And running `forte doc show 12` afterward lists `#1 [person] Alice` under `Mentions:`
+```
+
+### Scenario: `forte doc ingest --no-link` skips the link step
+
+```gherkin
+Given a default vault is set
+And a file `kickoff.md` exists on disk outside the vault
+When the user runs `forte doc ingest kickoff.md --no-link`
+Then the document is copied, extracted, and assigned an id as usual
+And the process does not run the interactive link prompt
+And the process exits with status code 0
+And no row is added to the `mentions` table for the new document
+```
+
+### Scenario: `forte doc ingest` skips the link step automatically when stdin is not a TTY
+
+```gherkin
+Given a default vault is set
+And a file `kickoff.md` exists on disk outside the vault
+And stdin is not a TTY (e.g. the command is run from a script or agent, or with piped input)
+When the user runs `forte doc ingest kickoff.md`
+Then the document is copied, extracted, and assigned an id as usual
+And the process prints a short message noting the link step was skipped because stdin is not
+  interactive
+And the process exits with status code 0
+And no row is added to the `mentions` table for the new document
+```
+
+### Scenario: A deduped re-ingest still offers the link step
+
+```gherkin
+Given a default vault is set
+And `forte doc ingest kickoff.md` has already been run successfully, assigning it id 7
+And the file at `kickoff.md` has not changed since (same source path and same content hash)
+And an entity with id 1, schema `person`, name "Alice" exists
+When the user runs `forte doc ingest kickoff.md` again
+Then the process reports the existing document id 7 rather than creating a new one
+And the process then runs the same prompt described under `forte doc link-interactive`, against
+  document id 7
+When the user types `ali` and selects `#1 [person] Alice`
+And the user finishes the session with an empty line
+Then the process exits with status code 0
+And running `forte doc show 7` afterward lists `#1 [person] Alice` under `Mentions:`
+```
+
+### Scenario: Aborting the link step after `forte doc ingest` reports progress and a resume hint
+
+```gherkin
+Given a default vault is set
+And a file `kickoff.md` exists on disk outside the vault
+And an entity with id 1, schema `person`, name "Alice" exists
+When the user runs `forte doc ingest kickoff.md`
+And the user types `ali` and selects `#1 [person] Alice`
+And the user aborts the session (Ctrl-C) before finishing
+Then the process prints the ingested document's id, e.g. 12, and reports that 1 entity was linked
+  before the abort, with no Python traceback shown
+And the process suggests running `forte doc link-interactive 12` to finish linking
+And the process exits with a non-zero status code
+And the document, and the one link made before the abort, are both still present afterward
+```
+
 ## Out of scope
 
 - **Entity extraction from doc content** — no LLM call inspects a document's text to propose entities or field values in this batch.
-- **Entity linking proposals** — `mentions` rows are only created/removed directly and manually via `doc link`/`doc unlink`; there is no automatic proposal step.
+- **Entity linking proposals** — `mentions` rows are only created/removed directly, by a human choosing an id (`doc link`/`doc unlink`) or picking from a substring-matched suggestion list (`doc link-interactive`); there is no automatic, LLM-driven proposal step.
 - **Field extraction** — no extraction of structured field values from documents.
 - **The review TUI** — there is nothing to approve yet, so no interactive review flow exists for docs.
 - **`ingest_changes` / resumable ingest** — this batch's `ingest` is a single atomic step (copy + extract + record), not a multi-step pipeline with persisted intermediate proposals.

@@ -136,6 +136,65 @@ def test_ingest_a_document_that_does_not_exist(tmp_path):
     assert "No documents yet." in forte("doc list", home).stdout
 
 
+# Scenario: `forte doc ingest` offers the link step after storing the document
+def test_doc_ingest_offers_the_link_step_after_storing_the_document(tmp_path, pty_forte):
+    # Given: a vault with a person entity, and a file to ingest
+    home, _ = a_vault(tmp_path)
+    source = a_source_file(tmp_path)
+    assert forte("schema add person", home).returncode == 0
+    assert forte('entity add person --name "Alice"', home).returncode == 0
+
+    # When: the user runs `forte doc ingest <path>`
+    session = pty_forte(f"doc ingest {source}", home)
+
+    # Then: the document is copied, extracted, and assigned an id before
+    # any link prompt is shown
+    session.wait_for("Ingested doc #1: notes.md")
+
+    # Then: the same interactive link prompt as `link-interactive` runs
+    session.wait_for("Link entities (type to search, Enter to add, empty line to finish):")
+
+    # When: the user types `ali` and selects `#1 [person] Alice`
+    session.type_text("ali")
+    session.wait_for("#1 [person] Alice")
+    session.tab()
+    session.enter()
+    session.wait_for("Linked: #1 [person] Alice")
+
+    # When: the user finishes the session with an empty line
+    session.enter()
+    returncode = session.wait_exit()
+
+    # Then: the process reports the entities linked, and exits 0
+    assert returncode == 0
+    assert "Linked 1 entity to doc #1: notes.md" in session.output
+
+    # Then: `forte doc show 1` lists the entity under Mentions
+    shown = forte("doc show 1", home)
+    assert "entity #1 [person] Alice" in shown.stdout
+
+
+# Scenario: `forte doc ingest --no-link` skips the link step
+def test_doc_ingest_no_link_skips_the_link_step(tmp_path):
+    # Given: a vault, and a file to ingest
+    home, _ = a_vault(tmp_path)
+    source = a_source_file(tmp_path)
+
+    # When: the user runs `forte doc ingest <path> --no-link`
+    result = forte(f"doc ingest {source} --no-link", home)
+
+    # Then: the document is stored as usual, and the process exits 0
+    assert result.returncode == 0, result.stderr
+    assert "Ingested doc #1: notes.md" in result.stdout
+
+    # Then: the interactive link prompt did not run
+    assert "Link entities" not in result.stdout
+
+    # Then: no row was added to the mentions table for the new document
+    shown = forte("doc show 1", home)
+    assert "Mentions: (none)" in shown.stdout
+
+
 # Scenario: list documents
 def test_list_documents(tmp_path):
     # Given: a vault with two ingested docs

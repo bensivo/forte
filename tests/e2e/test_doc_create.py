@@ -199,6 +199,66 @@ def test_an_editor_that_exits_nonzero_creates_no_document(tmp_path):
     assert list((vault_dir / "docs" / "processed").glob("*")) == []
 
 
+# Scenario: `forte doc create` offers the link step after saving
+def test_doc_create_offers_the_link_step_after_saving(tmp_path, pty_forte):
+    # Given: a vault with a person entity, and an editor that writes fixed
+    # content into the buffer
+    home, _ = a_vault(tmp_path)
+    editor = an_editor_that_writes(tmp_path, PASTED_TEXT)
+    assert forte("schema add person", home).returncode == 0
+    assert forte('entity add person --name "Alice"', home).returncode == 0
+
+    # When: the user runs `forte doc create <name>` and saves in the editor
+    session = pty_forte('doc create "Standup Notes"', home, env={"EDITOR": editor})
+
+    # Then: the document is stored and assigned an id before any link
+    # prompt is shown
+    session.wait_for("Created doc #1: Standup Notes")
+
+    # Then: the same interactive link prompt as `link-interactive` runs
+    session.wait_for("Link entities (type to search, Enter to add, empty line to finish):")
+
+    # When: the user types `ali` and selects `#1 [person] Alice`
+    session.type_text("ali")
+    session.wait_for("#1 [person] Alice")
+    session.tab()
+    session.enter()
+    session.wait_for("Linked: #1 [person] Alice")
+
+    # When: the user finishes the session with an empty line
+    session.enter()
+    returncode = session.wait_exit()
+
+    # Then: the process reports the entities linked, and exits 0
+    assert returncode == 0
+    assert "Linked 1 entity to doc #1: Standup Notes" in session.output
+
+    # Then: `forte doc show 1` lists the entity under Mentions
+    shown = forte("doc show 1", home)
+    assert "entity #1 [person] Alice" in shown.stdout
+
+
+# Scenario: `forte doc create --no-link` skips the link step
+def test_doc_create_no_link_skips_the_link_step(tmp_path):
+    # Given: a vault, and an editor that writes fixed content into the buffer
+    home, _ = a_vault(tmp_path)
+    editor = an_editor_that_writes(tmp_path, PASTED_TEXT)
+
+    # When: the user runs `forte doc create <name> --no-link`
+    result = forte('doc create "Standup Notes" --no-link', home, env={"EDITOR": editor})
+
+    # Then: the document is stored as usual, and the process exits 0
+    assert result.returncode == 0, result.stderr
+    assert "Created doc #1: Standup Notes" in result.stdout
+
+    # Then: the interactive link prompt did not run
+    assert "Link entities" not in result.stdout
+
+    # Then: no row was added to the mentions table for the new document
+    shown = forte("doc show 1", home)
+    assert "Mentions: (none)" in shown.stdout
+
+
 # Scenario: an editor that saves an empty buffer creates no document
 def test_an_editor_that_saves_an_empty_buffer_creates_no_document(tmp_path):
     # Given: a vault, and an editor that saves without writing any content
